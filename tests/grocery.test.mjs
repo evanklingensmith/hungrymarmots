@@ -6,7 +6,7 @@ const sampleItems = [
   {
     id: '1',
     name: 'Apples',
-    locationId: 'loc_a',
+    storeId: 'store_a',
     personTag: 'Alex',
     completed: false,
     mealDayId: 'monday',
@@ -14,7 +14,7 @@ const sampleItems = [
   {
     id: '2',
     name: 'Bread',
-    locationId: 'loc_b',
+    storeId: 'store_b',
     personTag: 'Sam',
     completed: true,
     mealDayId: 'tuesday',
@@ -22,7 +22,7 @@ const sampleItems = [
   {
     id: '3',
     name: 'Carrots',
-    locationId: 'loc_a',
+    storeId: 'store_a',
     personTag: 'alex',
     completed: false,
     mealDayId: null,
@@ -33,11 +33,11 @@ test('collectPersonTags deduplicates case-insensitively', () => {
   assert.deepStrictEqual(collectPersonTags(sampleItems), ['Alex', 'Sam']);
 });
 
-test('filterGroceryItems applies location, person, and status filters', () => {
-  assert.strictEqual(filterGroceryItems(sampleItems, { locationId: 'loc_a', personTag: 'all', status: 'all' }).length, 2);
-  assert.strictEqual(filterGroceryItems(sampleItems, { locationId: 'all', personTag: 'alex', status: 'all' }).length, 2);
-  assert.strictEqual(filterGroceryItems(sampleItems, { locationId: 'all', personTag: 'all', status: 'open' }).length, 2);
-  assert.strictEqual(filterGroceryItems(sampleItems, { locationId: 'all', personTag: 'all', status: 'done' }).length, 1);
+test('filterGroceryItems applies store, person, and status filters', () => {
+  assert.strictEqual(filterGroceryItems(sampleItems, { storeId: 'store_a', personTag: 'all', status: 'all' }).length, 2);
+  assert.strictEqual(filterGroceryItems(sampleItems, { storeId: 'all', personTag: 'alex', status: 'all' }).length, 2);
+  assert.strictEqual(filterGroceryItems(sampleItems, { storeId: 'all', personTag: 'all', status: 'open' }).length, 2);
+  assert.strictEqual(filterGroceryItems(sampleItems, { storeId: 'all', personTag: 'all', status: 'done' }).length, 1);
 });
 
 test('sortGroceryItems keeps open items first and sorts by name', () => {
@@ -46,7 +46,7 @@ test('sortGroceryItems keeps open items first and sorts by name', () => {
 });
 
 test('describeGroceryItem joins item metadata', () => {
-  const description = describeGroceryItem(sampleItems[0], new Map([['loc_a', 'Costco']]));
+  const description = describeGroceryItem(sampleItems[0], new Map([['store_a', 'Costco']]));
   assert.ok(/Costco/.test(description));
   assert.ok(/For Alex/.test(description));
   assert.ok(/monday/.test(description));

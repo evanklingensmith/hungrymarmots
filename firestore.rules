@@ -14,12 +14,20 @@ service cloud.firestore {
       return /databases/$(database)/documents/households/$(householdId)/members/$(uid);
     }
 
-    function locationPath(householdId, locationId) {
-      return /databases/$(database)/documents/households/$(householdId)/locations/$(locationId);
+    function listedInHouseholdDoc(householdId) {
+      return exists(householdPath(householdId))
+        && listedInHousehold(get(householdPath(householdId)).data);
     }
 
     function isMember(householdId) {
-      return signedIn() && exists(memberPath(householdId, request.auth.uid));
+      return signedIn()
+        && (exists(memberPath(householdId, request.auth.uid)) || listedInHouseholdDoc(householdId));
+    }
+
+    function listedInHousehold(data) {
+      return signedIn()
+        && data.memberUids is list
+        && request.auth.uid in data.memberUids;
     }
 
     function canSelfJoin(householdId) {
@@ -28,182 +36,71 @@ service cloud.firestore {
         && getAfter(memberPath(householdId, request.auth.uid)).data.joinCode == resource.data.inviteCode;
     }
 
-    function isDayId(dayId) {
-      return dayId in [
-        'monday',
-        'tuesday',
-        'wednesday',
-        'thursday',
-        'friday',
-        'saturday',
-        'sunday',
-      ];
-    }
-
     function validOptionalString(data, key, maxSize) {
-      return !(key in data) || data[key] == null || (data[key] is string && data[key].size() <= maxSize);
+      return !(key in data)
+        || data[key] == null
+        || (data[key] is string && data[key].size() <= maxSize);
     }
 
-    function validVersionMeta(meta) {
-      return meta is map
-        && meta.keys().hasOnly(['version', 'baseVersion', 'updatedAt', 'updatedBy', 'clientCounter'])
-        && meta.version is int
-        && meta.version >= 0
-        && meta.baseVersion is int
-        && meta.baseVersion >= 0
-        && meta.updatedBy is string
-        && meta.updatedBy.size() > 0
-        && meta.updatedBy.size() <= 120
-        && meta.clientCounter is int
-        && meta.clientCounter >= 0
-        && (!("updatedAt" in meta) || meta.updatedAt is timestamp);
+    function validMealTags(tags) {
+      return tags is list
+        && tags.size() <= 40
+        && tags.all(tag, tag is string && tag.size() > 0 && tag.size() <= 32);
     }
 
-    function validMealPayload(data, householdId) {
-      return data.keys().hasOnly(['mealName', 'cookUid', 'updatedAt', 'updatedBy'])
-        && validOptionalString(data, 'mealName', 120)
-        && (!("cookUid" in data)
-          || data.cookUid == null
-          || (
-            data.cookUid is string
-            && exists(memberPath(householdId, data.cookUid))
-          ))
-        && (!("updatedBy" in data)
-          || data.updatedBy == request.auth.uid)
-        && (!("updatedAt" in data) || data.updatedAt is timestamp);
-    }
-
-    function validMealDocLegacy(householdId) {
-      return validMealPayload(request.resource.data, householdId);
-    }
-
-    function validMealDocEnvelope(householdId) {
-      return request.resource.data.keys().hasOnly([
-          'data',
-          'updatedAt',
-          'meta',
-          'mealName',
-          'cookUid',
-          'updatedBy',
-        ])
-        && request.resource.data.data is map
-        && validMealPayload(request.resource.data.data, householdId)
-        && validVersionMeta(request.resource.data.meta)
-        && (!("updatedAt" in request.resource.data) || request.resource.data.updatedAt is timestamp);
-    }
-
-    function validMealDoc(householdId) {
-      return validMealDocLegacy(householdId) || validMealDocEnvelope(householdId);
-    }
-
-    function validGroceryPayload(data, householdId) {
-      return data.keys().hasOnly([
-          'name',
-          'quantity',
-          'notes',
-          'locationId',
-          'personTag',
-          'personUid',
-          'mealDayId',
-          'completed',
-          'createdBy',
-          'updatedBy',
-          'createdAt',
-          'updatedAt',
-        ])
-        && (data.name is string)
-        && data.name.size() > 0
-        && data.name.size() <= 80
-        && validOptionalString(data, 'quantity', 24)
-        && validOptionalString(data, 'notes', 240)
-        && validOptionalString(data, 'personTag', 50)
-        && (!("locationId" in data)
-          || data.locationId == null
-          || (
-            data.locationId is string
-            && exists(locationPath(householdId, data.locationId))
-          ))
-        && (!("personUid" in data)
-          || data.personUid == null
-          || (
-            data.personUid is string
-            && exists(memberPath(householdId, data.personUid))
-          ))
-        && (!("mealDayId" in data)
-          || data.mealDayId == null
-          || (
-            data.mealDayId is string
-            && isDayId(data.mealDayId)
-          ))
-        && (!("completed" in data) || data.completed is bool)
-        && (!("createdBy" in data)
-          || data.createdBy == null
-          || data.createdBy is string)
-        && (!("updatedBy" in data)
-          || data.updatedBy == request.auth.uid)
-        && (!("createdAt" in data) || data.createdAt is timestamp)
-        && (!("updatedAt" in data) || data.updatedAt is timestamp);
-    }
-
-    function validGroceryDocLegacy(householdId) {
-      return validGroceryPayload(request.resource.data, householdId);
-    }
-
-    function validGroceryDocEnvelope(householdId) {
-      return request.resource.data.keys().hasOnly([
-          'data',
-          'updatedAt',
-          'meta',
-          'name',
-          'quantity',
-          'notes',
-          'locationId',
-          'personTag',
-          'personUid',
-          'mealDayId',
-          'completed',
-          'createdBy',
-          'updatedBy',
-          'createdAt',
-        ])
-        && request.resource.data.data is map
-        && validGroceryPayload(request.resource.data.data, householdId)
-        && validVersionMeta(request.resource.data.meta)
-        && (!("updatedAt" in request.resource.data) || request.resource.data.updatedAt is timestamp);
-    }
-
-    function validGroceryDoc(householdId) {
-      return validGroceryDocLegacy(householdId) || validGroceryDocEnvelope(householdId);
-    }
-
-    function validLocationPayload(data) {
-      return data.keys().hasOnly(['name', 'createdBy', 'createdAt'])
-        && data.name is string
-        && data.name.size() > 0
-        && data.name.size() <= 40
-        && data.createdBy == request.auth.uid
-        && (!("createdAt" in data) || data.createdAt is timestamp);
-    }
-
-    function validLocationDoc() {
-      return validLocationPayload(request.resource.data)
-        || (
-          request.resource.data.keys().hasOnly(['data', 'updatedAt', 'meta', 'name', 'createdBy', 'createdAt'])
-          && request.resource.data.data is map
-          && validLocationPayload(request.resource.data.data)
-          && validVersionMeta(request.resource.data.meta)
-          && (!("updatedAt" in request.resource.data) || request.resource.data.updatedAt is timestamp)
+    function validMealIngredients(ingredients) {
+      return ingredients is list
+        && ingredients.size() <= 80
+        && ingredients.all(
+          ingredient,
+          ingredient is map
+            && ingredient.keys().hasOnly(['id', 'name', 'usuallyNeedToBuy', 'defaultStoreId'])
+            && ingredient.name is string
+            && ingredient.name.size() > 0
+            && ingredient.name.size() <= 80
+            && ingredient.usuallyNeedToBuy is bool
+            && (!("id" in ingredient) || ingredient.id == null || (ingredient.id is string && ingredient.id.size() <= 120))
+            && (!("defaultStoreId" in ingredient)
+              || ingredient.defaultStoreId == null
+              || (ingredient.defaultStoreId is string && ingredient.defaultStoreId.size() <= 120))
         );
     }
 
-    match /users/{uid} {
-      allow read, write: if signedIn() && request.auth.uid == uid;
+    function validIngredientPlan(plan) {
+      return plan is list
+        && plan.size() <= 80
+        && plan.all(
+          entry,
+          entry is map
+            && entry.keys().hasOnly(['ingredientId', 'name', 'needToBuy', 'storeId'])
+            && entry.name is string
+            && entry.name.size() > 0
+            && entry.name.size() <= 80
+            && entry.needToBuy is bool
+            && (!("ingredientId" in entry)
+              || entry.ingredientId == null
+              || (entry.ingredientId is string && entry.ingredientId.size() <= 120))
+            && (!("storeId" in entry)
+              || entry.storeId == null
+              || (entry.storeId is string && entry.storeId.size() <= 120))
+        );
     }
 
-    match /households/{householdId} {
-      allow read: if isMember(householdId);
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['name', 'ownerUid', 'memberUids', 'inviteCode', 'createdAt', 'updatedAt'])
+    function validEaterUids(uids) {
+      return uids is list
+        && uids.size() <= 30
+        && uids.all(uid, uid is string && uid.size() > 0 && uid.size() <= 120);
+    }
+
+    function validHouseholdCreate() {
+      return request.resource.data.keys().hasOnly([
+          'name',
+          'ownerUid',
+          'memberUids',
+          'inviteCode',
+          'createdAt',
+          'updatedAt',
+        ])
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 60
@@ -214,71 +111,254 @@ service cloud.firestore {
         && request.resource.data.inviteCode is string
         && request.resource.data.inviteCode.size() >= 4
         && request.resource.data.inviteCode.size() <= 12;
-      allow update: if isMember(householdId)
-        && request.resource.data.ownerUid == resource.data.ownerUid
+    }
+
+    function validHouseholdUpdate() {
+      return request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 60
         && request.resource.data.memberUids is list
-        && request.resource.data.memberUids.hasAll([request.auth.uid])
-        || canSelfJoin(householdId)
-          && request.resource.data.ownerUid == resource.data.ownerUid
-          && request.resource.data.memberUids is list
-          && request.resource.data.memberUids.hasAll([request.auth.uid]);
-      allow delete: if signedIn() && isMember(householdId) && resource.data.ownerUid == request.auth.uid;
+        && request.auth.uid in request.resource.data.memberUids
+        && request.resource.data.inviteCode is string
+        && request.resource.data.inviteCode.size() >= 4
+        && request.resource.data.inviteCode.size() <= 12;
+    }
+
+    function validMemberDoc(uid, householdId) {
+      return request.resource.data.uid == uid
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 100
+        && request.resource.data.role in ['owner', 'member']
+        && request.resource.data.joinCode is string
+        && request.resource.data.joinCode == get(householdPath(householdId)).data.inviteCode;
+    }
+
+    function validStoreDoc() {
+      return request.resource.data.keys().hasOnly(['name', 'createdBy', 'createdAt', 'updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 50
+        && request.resource.data.createdBy is string
+        && request.resource.data.createdBy.size() > 0
+        && request.resource.data.createdBy.size() <= 120;
+    }
+
+    function validMealDoc() {
+      return request.resource.data.keys().hasOnly([
+          'title',
+          'description',
+          'tags',
+          'ingredients',
+          'createdBy',
+          'createdAt',
+          'updatedAt',
+        ])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 1000
+        && validMealTags(request.resource.data.tags)
+        && validMealIngredients(request.resource.data.ingredients)
+        && request.resource.data.createdBy is string
+        && request.resource.data.createdBy.size() > 0
+        && request.resource.data.createdBy.size() <= 120;
+    }
+
+    function validWeekDayDoc() {
+      return request.resource.data.keys().hasOnly([
+          'mealId',
+          'mealTitle',
+          'cookUid',
+          'eaterUids',
+          'notes',
+          'ingredientPlan',
+          'updatedBy',
+          'updatedAt',
+        ])
+        && validOptionalString(request.resource.data, 'mealId', 120)
+        && validOptionalString(request.resource.data, 'mealTitle', 120)
+        && validOptionalString(request.resource.data, 'cookUid', 120)
+        && request.resource.data.eaterUids is list
+        && validEaterUids(request.resource.data.eaterUids)
+        && request.resource.data.notes is string
+        && request.resource.data.notes.size() <= 1000
+        && validIngredientPlan(request.resource.data.ingredientPlan)
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+
+    function validGroceryDoc() {
+      return request.resource.data.keys().hasOnly([
+          'householdId',
+          'name',
+          'quantity',
+          'notes',
+          'storeId',
+          'completed',
+          'createdBy',
+          'updatedBy',
+          'createdAt',
+          'updatedAt',
+          'sourceWeekId',
+          'sourceDayId',
+          'sourceMealId',
+          'autoGeneratedFromMeal',
+        ])
+        && request.resource.data.householdId is string
+        && request.resource.data.householdId.size() > 0
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 80
+        && validOptionalString(request.resource.data, 'quantity', 24)
+        && validOptionalString(request.resource.data, 'notes', 240)
+        && validOptionalString(request.resource.data, 'storeId', 120)
+        && validOptionalString(request.resource.data, 'sourceWeekId', 120)
+        && validOptionalString(request.resource.data, 'sourceDayId', 120)
+        && validOptionalString(request.resource.data, 'sourceMealId', 120)
+        && request.resource.data.completed is bool
+        && request.resource.data.createdBy is string
+        && request.resource.data.updatedBy is string
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.autoGeneratedFromMeal is bool;
+    }
+
+    function validPantryDoc() {
+      return request.resource.data.keys().hasOnly([
+          'name',
+          'section',
+          'sourceGroceryItemId',
+          'autoFromGrocery',
+          'createdBy',
+          'updatedBy',
+          'createdAt',
+          'updatedAt',
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 80
+        && request.resource.data.section in ['weekly', 'other']
+        && validOptionalString(request.resource.data, 'sourceGroceryItemId', 120)
+        && request.resource.data.autoFromGrocery is bool
+        && request.resource.data.createdBy is string
+        && request.resource.data.updatedBy is string
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+
+    function validActivityDoc() {
+      return request.resource.data.keys().hasOnly([
+          'actorUid',
+          'actorName',
+          'scope',
+          'action',
+          'message',
+          'undo',
+          'undone',
+          'undoneBy',
+          'undoneAt',
+          'createdAt',
+        ])
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.actorName is string
+        && request.resource.data.actorName.size() > 0
+        && request.resource.data.actorName.size() <= 100
+        && request.resource.data.scope is string
+        && request.resource.data.scope.size() > 0
+        && request.resource.data.scope.size() <= 40
+        && request.resource.data.action is string
+        && request.resource.data.action.size() > 0
+        && request.resource.data.action.size() <= 60
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 220
+        && (!("undo" in request.resource.data) || request.resource.data.undo == null || request.resource.data.undo is map)
+        && (!("undone" in request.resource.data) || request.resource.data.undone is bool)
+        && validOptionalString(request.resource.data, 'undoneBy', 120);
+    }
+
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /households/{householdId} {
+      allow get: if listedInHousehold(resource.data) || isMember(householdId);
+      allow list: if listedInHousehold(resource.data);
+      allow create: if signedIn() && validHouseholdCreate();
+      allow update: if (isMember(householdId) && validHouseholdUpdate())
+        || (canSelfJoin(householdId) && validHouseholdUpdate());
+      allow delete: if isMember(householdId) && resource.data.ownerUid == request.auth.uid;
 
       match /members/{uid} {
         allow read: if isMember(householdId);
         allow create: if signedIn()
           && uid == request.auth.uid
-          && exists(householdPath(householdId))
-          && request.resource.data.uid == request.auth.uid
-          && request.resource.data.displayName is string
-          && request.resource.data.displayName.size() > 0
-          && request.resource.data.displayName.size() <= 100
-          && request.resource.data.role in ['owner', 'member']
-          && request.resource.data.joinCode is string
-          && request.resource.data.joinCode == get(householdPath(householdId)).data.inviteCode;
+          && (exists(householdPath(householdId)) || existsAfter(householdPath(householdId)))
+          && validMemberDoc(uid, householdId);
         allow update, delete: if isMember(householdId);
       }
 
-      match /weeks/{weekId} {
-        allow read, write: if isMember(householdId);
+      match /stores/{storeId} {
+        allow read: if isMember(householdId);
+        allow create: if isMember(householdId)
+          && validStoreDoc()
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isMember(householdId)
+          && validStoreDoc()
+          && request.resource.data.createdBy == resource.data.createdBy;
+        allow delete: if isMember(householdId);
+      }
 
-        match /days/{dayId} {
-          allow read: if isMember(householdId);
-          allow write: if isMember(householdId)
-            && isDayId(dayId)
-            && validMealDoc(householdId);
-        }
+      match /meals/{mealId} {
+        allow read: if isMember(householdId);
+        allow create: if isMember(householdId)
+          && validMealDoc()
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isMember(householdId)
+          && validMealDoc()
+          && request.resource.data.createdBy == resource.data.createdBy;
+        allow delete: if isMember(householdId);
+      }
+
+      match /weeks/{weekId}/days/{dayId} {
+        allow read: if isMember(householdId);
+        allow create, update: if isMember(householdId)
+          && dayId in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+          && validWeekDayDoc();
+        allow delete: if isMember(householdId);
       }
 
       match /groceryItems/{itemId} {
         allow read: if isMember(householdId);
-        allow create, update: if isMember(householdId)
-          && validGroceryDoc(householdId);
+        allow create: if isMember(householdId)
+          && validGroceryDoc()
+          && request.resource.data.householdId == householdId
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isMember(householdId)
+          && validGroceryDoc()
+          && request.resource.data.householdId == householdId
+          && request.resource.data.createdBy == resource.data.createdBy;
         allow delete: if isMember(householdId);
       }
 
-      match /locations/{locationId} {
+      match /pantryItems/{itemId} {
         allow read: if isMember(householdId);
-        allow create, update: if isMember(householdId)
-          && validLocationDoc();
+        allow create: if isMember(householdId)
+          && validPantryDoc()
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isMember(householdId)
+          && validPantryDoc()
+          && request.resource.data.createdBy == resource.data.createdBy;
         allow delete: if isMember(householdId);
       }
 
       match /activity/{activityId} {
         allow read: if isMember(householdId);
-        allow create: if isMember(householdId)
-          && request.resource.data.keys().hasOnly(['actorUid', 'actorName', 'type', 'message', 'createdAt'])
-          && request.resource.data.actorUid == request.auth.uid
-          && request.resource.data.actorName is string
-          && request.resource.data.actorName.size() > 0
-          && request.resource.data.actorName.size() <= 100
-          && request.resource.data.type is string
-          && request.resource.data.type.size() > 0
-          && request.resource.data.type.size() <= 40
-          && request.resource.data.message is string
-          && request.resource.data.message.size() > 0
-          && request.resource.data.message.size() <= 180;
-        allow update, delete: if false;
+        allow create: if isMember(householdId) && validActivityDoc();
+        allow update: if isMember(householdId)
+          && request.resource.data.actorUid == resource.data.actorUid
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if false;
       }
     }
   }

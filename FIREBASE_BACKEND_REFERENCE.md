@@ -199,7 +199,7 @@ Activity is append-only: create allowed, update/delete denied.
 `firestore.rules` enforces:
 
 - Signed-in required for all remote access.
-- Household membership gate for all reads/writes under `households/{householdId}`.
+- Household list/get uses `memberUids` membership on the household doc; nested reads/writes under `households/{householdId}` require a `members/{uid}` membership doc.
 - Self-join flow allowed only when member doc `joinCode` equals household `inviteCode` in same request.
 - Household owner cannot be changed by update.
 - `members/{uid}` create is self-only (`uid == request.auth.uid`).

@@ -2,6 +2,22 @@ function lower(value) {
   return typeof value === 'string' ? value.toLowerCase() : '';
 }
 
+function itemStoreId(item) {
+  if (!item || typeof item !== 'object') {
+    return null;
+  }
+
+  if (typeof item.storeId === 'string' && item.storeId.trim()) {
+    return item.storeId;
+  }
+
+  if (typeof item.locationId === 'string' && item.locationId.trim()) {
+    return item.locationId;
+  }
+
+  return null;
+}
+
 export function collectPersonTags(items) {
   const seen = new Map();
 
@@ -25,12 +41,13 @@ export function collectPersonTags(items) {
 }
 
 export function filterGroceryItems(items, filters = {}) {
-  const locationId = Object.prototype.hasOwnProperty.call(filters, 'locationId')
-    ? filters.locationId
-    : 'all';
-  const personTag = Object.prototype.hasOwnProperty.call(filters, 'personTag')
-    ? filters.personTag
-    : 'all';
+  const storeId = Object.prototype.hasOwnProperty.call(filters, 'storeId')
+    ? filters.storeId
+    : Object.prototype.hasOwnProperty.call(filters, 'locationId')
+      ? filters.locationId
+      : 'all';
+
+  const personTag = Object.prototype.hasOwnProperty.call(filters, 'personTag') ? filters.personTag : 'all';
   const status = Object.prototype.hasOwnProperty.call(filters, 'status') ? filters.status : 'open';
 
   return items.filter((item) => {
@@ -38,8 +55,7 @@ export function filterGroceryItems(items, filters = {}) {
       return false;
     }
 
-    const itemLocationId = Object.prototype.hasOwnProperty.call(item, 'locationId') ? item.locationId : null;
-    if (locationId !== 'all' && itemLocationId !== locationId) {
+    if (storeId !== 'all' && itemStoreId(item) !== storeId) {
       return false;
     }
 
@@ -69,15 +85,16 @@ export function sortGroceryItems(items) {
   });
 }
 
-export function describeGroceryItem(item, locationsById = new Map()) {
+export function describeGroceryItem(item, storesById = new Map()) {
   const details = [];
 
   if (item.quantity) {
     details.push(item.quantity);
   }
 
-  if (item.locationId && locationsById.has(item.locationId)) {
-    details.push(locationsById.get(item.locationId));
+  const storeId = itemStoreId(item);
+  if (storeId && storesById.has(storeId)) {
+    details.push(storesById.get(storeId));
   }
 
   if (item.personTag) {
