@@ -16,15 +16,19 @@ fi
 
 BUILD_VERSION="${BUILD_VERSION:-$(git rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)}"
 TMP_DIR="$(mktemp -d -t hm-deploy-XXXXXX)"
-TARGET_HTML="${TMP_DIR}/public/index.html"
 
 cleanup() {
-  git worktree remove --force "${TMP_DIR}" >/dev/null 2>&1 || true
+  rm -rf "${TMP_DIR}" >/dev/null 2>&1 || true
 }
 
 trap cleanup EXIT
 
-git worktree add --detach "${TMP_DIR}" HEAD >/dev/null
+# Deploy from the current working tree so local (uncommitted) fixes are included.
+mkdir -p "${TMP_DIR}"
+cp -R "${REPO_ROOT}/." "${TMP_DIR}/"
+rm -rf "${TMP_DIR}/.git"
+
+TARGET_HTML="${TMP_DIR}/public/index.html"
 
 if ! grep -q "__BUILD_VERSION__" "${TARGET_HTML}"; then
   echo "error: __BUILD_VERSION__ placeholder not found in ${TARGET_HTML}" >&2
