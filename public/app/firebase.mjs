@@ -33,7 +33,14 @@ function normalizeRuntimeConfig(config) {
     return null;
   }
 
-  return { ...config };
+  const normalized = { ...config };
+  const projectId = String(normalized.projectId ?? '').trim();
+  if (projectId) {
+    // Use Firebase's canonical auth handler domain to avoid custom-domain OAuth mismatches.
+    normalized.authDomain = `${projectId}.firebaseapp.com`;
+  }
+
+  return normalized;
 }
 
 async function waitForFirebaseSdk(timeoutMs = FIREBASE_WAIT_TIMEOUT_MS) {

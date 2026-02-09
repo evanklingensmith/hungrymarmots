@@ -32,7 +32,7 @@ Remote mode only enables when these config keys are present:
 
 Additional runtime behavior (`public/app/firebase.mjs`):
 
-- Auth domain is used exactly as provided by `window.firebaseConfig` (Hosting init or fallback object).
+- Auth domain is normalized to `${projectId}.firebaseapp.com` for OAuth handler stability.
 - Auth persistence is set to `LOCAL` when available.
 - Firestore offline persistence is enabled with `{ synchronizeTabs: true }` when supported.
 - Google sign-in uses popup first, then redirect fallback for popup-blocking environments.
