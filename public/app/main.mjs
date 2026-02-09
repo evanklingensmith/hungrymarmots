@@ -63,6 +63,14 @@ function cacheElements() {
   elements.localOnlyButton = document.getElementById('local-only-button');
   elements.authActionButton = document.getElementById('auth-action-button');
   elements.householdOpenButton = document.getElementById('household-open-button');
+  elements.mainAppContent = document.getElementById('main-app-content');
+  elements.householdGate = document.getElementById('household-gate');
+  elements.householdGateStatus = document.getElementById('household-gate-status');
+  elements.householdGateCreateForm = document.getElementById('household-gate-create-form');
+  elements.householdGateNameInput = document.getElementById('household-gate-name');
+  elements.householdGateJoinForm = document.getElementById('household-gate-join-form');
+  elements.householdGateIdInput = document.getElementById('household-gate-id');
+  elements.householdGateCodeInput = document.getElementById('household-gate-code');
 
   elements.tabButtons = Array.from(document.querySelectorAll('[data-tab-target]'));
   elements.tabPanels = {
@@ -180,7 +188,9 @@ function clearError() {
 
 function showError(error) {
   const message = typeof error === 'string' ? error : error?.message || 'Unknown error';
-  elements.error.textContent = message;
+  const code = typeof error === 'object' && error ? error.code : null;
+  const displayMessage = code && !String(message).includes(code) ? `${message} (${code})` : message;
+  elements.error.textContent = displayMessage;
   console.error(error);
 }
 
@@ -204,6 +214,10 @@ function showView(viewName) {
 
 function activeHousehold() {
   return state.households.find((entry) => entry.id === state.activeHouseholdId) || null;
+}
+
+function hasSelectedHousehold() {
+  return Boolean(activeHousehold());
 }
 
 function inAppView() {
@@ -272,15 +286,15 @@ function renderAuthDetails() {
 
 function renderHeaderButtons() {
   const inApp = inAppView();
+  const household = activeHousehold();
 
   elements.authActionButton.classList.toggle('hidden', !inApp);
-  elements.householdOpenButton.classList.toggle('hidden', !inApp);
+  elements.householdOpenButton.classList.toggle('hidden', !inApp || !household);
 
   if (!inApp) {
     return;
   }
 
-  const household = activeHousehold();
   elements.householdOpenButton.textContent = household ? `Household: ${household.name}` : 'Household setup';
 
   if (isRemoteMode()) {
@@ -290,6 +304,20 @@ function renderHeaderButtons() {
     elements.authActionButton.textContent = state.remoteAvailable ? 'Sign in' : 'Sign in unavailable';
     elements.authActionButton.disabled = !state.remoteAvailable;
   }
+}
+
+function renderHouseholdGate() {
+  const showGate = inAppView() && !hasSelectedHousehold();
+  elements.householdGate.classList.toggle('hidden', !showGate);
+  elements.mainAppContent.classList.toggle('hidden', showGate);
+
+  if (!showGate) {
+    return;
+  }
+
+  elements.householdGateStatus.textContent = isLocalMode()
+    ? 'Create a household to begin planning meals on this device.'
+    : 'Create a household or join one with an invite code to continue.';
 }
 
 function switchTab(tabName) {
@@ -1115,18 +1143,18 @@ async function refreshHouseholds(preferredHouseholdId = null) {
 
   renderHeaderButtons();
   renderHouseholdModal();
+  renderHouseholdGate();
 
   if (!households.length) {
     clearHouseholdSubscriptions();
     clearWeekSubscription();
     resetHouseholdData();
     renderMainData();
-    openHouseholdModal(true);
+    closeHouseholdModal();
     setStatus('Create or join a household to continue.');
     return;
   }
 
-  openHouseholdModal(false);
   closeHouseholdModal();
   subscribeToHouseholdData();
 
@@ -1279,6 +1307,30 @@ async function selectHousehold(householdId) {
   closeHouseholdModal();
 }
 
+async function createHouseholdAndRefresh(rawHouseholdName) {
+  const householdId = await state.dataApi.createHousehold(
+    state.dataContext,
+    state.user,
+    rawHouseholdName,
+  );
+  await refreshHouseholds(householdId);
+  closeHouseholdModal();
+  setStatus('Household created.');
+}
+
+async function joinHouseholdAndRefresh(rawHouseholdId, rawInviteCode) {
+  const joinedHouseholdId = String(rawHouseholdId || '').trim();
+  await state.dataApi.joinHousehold(
+    state.dataContext,
+    state.user,
+    rawHouseholdId,
+    rawInviteCode,
+  );
+  await refreshHouseholds(joinedHouseholdId);
+  closeHouseholdModal();
+  setStatus('Joined household.');
+}
+
 function showLoginScreen() {
   state.pendingRemoteEntry = false;
   state.mode = null;
@@ -1300,12 +1352,18 @@ function showLoginScreen() {
   renderModeBanner();
   updateLoginView();
   renderHeaderButtons();
+  renderHouseholdGate();
 }
 
 async function enterLocalMode() {
   state.pendingRemoteEntry = false;
   state.mode = 'local';
   state.dataApi = localData;
+  state.households = [];
+  state.activeHouseholdId = null;
+  clearHouseholdSubscriptions();
+  clearWeekSubscription();
+  resetHouseholdData();
 
   if (!state.localContext) {
     state.localContext = localData.createLocalContext(localData.LOCAL_MODE_USER);
@@ -1318,6 +1376,7 @@ async function enterLocalMode() {
   renderAuthDetails();
   renderModeBanner();
   renderHeaderButtons();
+  renderMainData();
 
   await refreshHouseholds();
 }
@@ -1332,11 +1391,17 @@ async function enterRemoteMode(user) {
   state.dataApi = remoteData;
   state.dataContext = state.services.db;
   state.user = user;
+  state.households = [];
+  state.activeHouseholdId = null;
+  clearHouseholdSubscriptions();
+  clearWeekSubscription();
+  resetHouseholdData();
 
   showView('app');
   renderAuthDetails();
   renderModeBanner();
   renderHeaderButtons();
+  renderMainData();
 
   await refreshHouseholds();
 }
@@ -1378,6 +1443,7 @@ function renderMainData() {
   renderHouseholdModal();
   renderGrocerySubview();
   renderPantrySubview();
+  renderHouseholdGate();
 }
 
 function bindEvents() {
@@ -1455,16 +1521,9 @@ function bindEvents() {
     clearError();
 
     try {
-      const householdId = await state.dataApi.createHousehold(
-        state.dataContext,
-        state.user,
-        elements.householdNameInput.value,
-      );
-
+      await createHouseholdAndRefresh(elements.householdNameInput.value);
       elements.householdNameInput.value = '';
-      await refreshHouseholds(householdId);
-      closeHouseholdModal();
-      setStatus('Household created.');
+      elements.householdGateNameInput.value = '';
     } catch (error) {
       showError(error);
     }
@@ -1475,20 +1534,39 @@ function bindEvents() {
     clearError();
 
     try {
-      await state.dataApi.joinHousehold(
-        state.dataContext,
-        state.user,
-        elements.joinHouseholdIdInput.value,
-        elements.joinHouseholdCodeInput.value,
-      );
-
-      const joinedHouseholdId = elements.joinHouseholdIdInput.value.trim();
+      await joinHouseholdAndRefresh(elements.joinHouseholdIdInput.value, elements.joinHouseholdCodeInput.value);
       elements.joinHouseholdIdInput.value = '';
       elements.joinHouseholdCodeInput.value = '';
+      elements.householdGateIdInput.value = '';
+      elements.householdGateCodeInput.value = '';
+    } catch (error) {
+      showError(error);
+    }
+  });
 
-      await refreshHouseholds(joinedHouseholdId);
-      closeHouseholdModal();
-      setStatus('Joined household.');
+  elements.householdGateCreateForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearError();
+
+    try {
+      await createHouseholdAndRefresh(elements.householdGateNameInput.value);
+      elements.householdGateNameInput.value = '';
+      elements.householdNameInput.value = '';
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  elements.householdGateJoinForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearError();
+
+    try {
+      await joinHouseholdAndRefresh(elements.householdGateIdInput.value, elements.householdGateCodeInput.value);
+      elements.householdGateIdInput.value = '';
+      elements.householdGateCodeInput.value = '';
+      elements.joinHouseholdIdInput.value = '';
+      elements.joinHouseholdCodeInput.value = '';
     } catch (error) {
       showError(error);
     }

@@ -69,8 +69,17 @@ function pantryIdFromGrocery(itemId) {
   return `auto-${itemId}`;
 }
 
+function boundedIdentityText(value, max, fallback) {
+  const text = String(value || '').trim();
+  if (text) {
+    return text.slice(0, max);
+  }
+
+  return fallback;
+}
+
 function actorName(user) {
-  return user.displayName || user.email || 'Unknown user';
+  return boundedIdentityText(user.displayName || user.email, 100, 'Unknown user');
 }
 
 function mapHousehold(doc) {
@@ -237,7 +246,7 @@ function memberPayload(user, role, joinCode) {
   return {
     uid: user.uid,
     email: user.email || null,
-    displayName: user.displayName || user.email || 'Unknown member',
+    displayName: boundedIdentityText(user.displayName || user.email, 100, 'Unknown member'),
     photoURL: user.photoURL || null,
     role,
     joinCode,
@@ -247,18 +256,23 @@ function memberPayload(user, role, joinCode) {
 }
 
 async function addActivity(db, householdId, user, scope, action, message, undo = null) {
-  await activityCollection(db, householdId).add({
-    actorUid: user.uid,
-    actorName: actorName(user),
-    scope,
-    action,
-    message,
-    undo: undo || null,
-    undone: false,
-    undoneBy: null,
-    undoneAt: null,
-    createdAt: serverTimestamp(),
-  });
+  try {
+    await activityCollection(db, householdId).add({
+      actorUid: user.uid,
+      actorName: actorName(user),
+      scope,
+      action,
+      message,
+      undo: undo || null,
+      undone: false,
+      undoneBy: null,
+      undoneAt: null,
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    // Activity logging is best-effort; do not block primary user actions.
+    console.warn('Failed to write household activity entry', error);
+  }
 }
 
 export async function listUserHouseholds(db, uid) {

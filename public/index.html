@@ -255,6 +255,15 @@
         margin-bottom: 1rem;
       }
 
+      #household-gate {
+        max-width: 840px;
+        margin: 0 auto;
+      }
+
+      #household-gate h2 {
+        margin: 0;
+      }
+
       .tab-nav button.active,
       .subtab-nav button.active {
         background: var(--ink);
@@ -522,116 +531,153 @@
       </section>
 
       <section id="app-view" class="view hidden">
-        <div class="tab-nav" role="tablist" aria-label="Main navigation tabs">
-          <button type="button" role="tab" aria-selected="true" class="active" data-tab-target="weekly">Weekly meals</button>
-          <button type="button" role="tab" aria-selected="false" data-tab-target="grocery">Grocery list</button>
-          <button type="button" role="tab" aria-selected="false" data-tab-target="meals">Meals we make</button>
-          <button type="button" role="tab" aria-selected="false" data-tab-target="pantry">Pantry</button>
-        </div>
+        <section id="household-gate" class="stack hidden">
+          <article class="card stack">
+            <h2>Set up your household</h2>
+            <p id="household-gate-status" class="meta">Create a household or join one with an invite code to continue.</p>
+          </article>
 
-        <section id="weekly-panel" role="tabpanel" class="stack">
-          <div class="week-header">
-            <div class="actions">
-              <button id="week-prev" type="button" class="ghost">Previous week</button>
-              <button id="week-next" type="button" class="ghost">Next week</button>
+          <div class="two-col">
+            <article class="card stack">
+              <h3>Create household</h3>
+              <form id="household-gate-create-form" class="stack">
+                <label>
+                  Household name
+                  <input id="household-gate-name" type="text" maxlength="60" required placeholder="Maple Street" />
+                </label>
+                <button type="submit">Create household</button>
+              </form>
+            </article>
+
+            <article class="card stack">
+              <h3>Join household</h3>
+              <form id="household-gate-join-form" class="stack">
+                <label>
+                  Household id
+                  <input id="household-gate-id" type="text" required placeholder="household-abc" />
+                </label>
+                <label>
+                  Invite code
+                  <input id="household-gate-code" type="text" required placeholder="AB12CD" />
+                </label>
+                <button type="submit" class="ghost">Join household</button>
+              </form>
+            </article>
+          </div>
+        </section>
+
+        <div id="main-app-content">
+          <div class="tab-nav" role="tablist" aria-label="Main navigation tabs">
+            <button type="button" role="tab" aria-selected="true" class="active" data-tab-target="weekly">Weekly meals</button>
+            <button type="button" role="tab" aria-selected="false" data-tab-target="grocery">Grocery list</button>
+            <button type="button" role="tab" aria-selected="false" data-tab-target="meals">Meals we make</button>
+            <button type="button" role="tab" aria-selected="false" data-tab-target="pantry">Pantry</button>
+          </div>
+
+          <section id="weekly-panel" role="tabpanel" class="stack">
+            <div class="week-header">
+              <div class="actions">
+                <button id="week-prev" type="button" class="ghost">Previous week</button>
+                <button id="week-next" type="button" class="ghost">Next week</button>
+              </div>
+              <strong id="week-label"></strong>
             </div>
-            <strong id="week-label"></strong>
-          </div>
-          <div id="weekly-grid" class="planner-grid"></div>
-        </section>
+            <div id="weekly-grid" class="planner-grid"></div>
+          </section>
 
-        <section id="grocery-panel" role="tabpanel" class="hidden stack">
-          <div class="panel-header">
-            <h3>Shared grocery list</h3>
-            <button id="manage-stores-button" type="button" class="ghost">Manage stores</button>
-          </div>
+          <section id="grocery-panel" role="tabpanel" class="hidden stack">
+            <div class="panel-header">
+              <h3>Shared grocery list</h3>
+              <button id="manage-stores-button" type="button" class="ghost">Manage stores</button>
+            </div>
 
-          <form id="grocery-add-form" class="inline-form">
-            <label>
-              Item
-              <input id="grocery-add-name" type="text" maxlength="80" required placeholder="Milk" />
-            </label>
-            <label>
-              Notes
-              <input id="grocery-add-notes" type="text" maxlength="240" placeholder="2% if available" />
-            </label>
-            <label>
-              Store
-              <select id="grocery-add-store"></select>
-            </label>
-            <button type="submit">Add item</button>
-          </form>
+            <form id="grocery-add-form" class="inline-form">
+              <label>
+                Item
+                <input id="grocery-add-name" type="text" maxlength="80" required placeholder="Milk" />
+              </label>
+              <label>
+                Notes
+                <input id="grocery-add-notes" type="text" maxlength="240" placeholder="2% if available" />
+              </label>
+              <label>
+                Store
+                <select id="grocery-add-store"></select>
+              </label>
+              <button type="submit">Add item</button>
+            </form>
 
-          <div class="subtab-nav" role="tablist" aria-label="Grocery views">
-            <button id="grocery-view-list-button" type="button" class="active">List</button>
-            <button id="grocery-view-history-button" type="button" class="ghost">History</button>
-          </div>
+            <div class="subtab-nav" role="tablist" aria-label="Grocery views">
+              <button id="grocery-view-list-button" type="button" class="active">List</button>
+              <button id="grocery-view-history-button" type="button" class="ghost">History</button>
+            </div>
 
-          <div id="grocery-list-view" class="stack">
-            <div id="grocery-stores-grid" class="store-grid"></div>
-            <article class="card">
-              <h4>Weekly pantry from checked items</h4>
-              <ul id="grocery-weekly-pantry-list" class="panel-list"></ul>
-            </article>
-          </div>
+            <div id="grocery-list-view" class="stack">
+              <div id="grocery-stores-grid" class="store-grid"></div>
+              <article class="card">
+                <h4>Weekly pantry from checked items</h4>
+                <ul id="grocery-weekly-pantry-list" class="panel-list"></ul>
+              </article>
+            </div>
 
-          <div id="grocery-history-view" class="hidden">
-            <ul id="grocery-history-list" class="panel-list"></ul>
-          </div>
-        </section>
+            <div id="grocery-history-view" class="hidden">
+              <ul id="grocery-history-list" class="panel-list"></ul>
+            </div>
+          </section>
 
-        <section id="meals-panel" role="tabpanel" class="hidden stack">
-          <div class="panel-header">
-            <h3>Meals we make</h3>
-            <button id="add-meal-button" type="button">Add meal</button>
-          </div>
+          <section id="meals-panel" role="tabpanel" class="hidden stack">
+            <div class="panel-header">
+              <h3>Meals we make</h3>
+              <button id="add-meal-button" type="button">Add meal</button>
+            </div>
 
-          <form id="meal-search-form" class="inline-form" autocomplete="off">
-            <label>
-              Text search
-              <input id="meal-search-text" type="text" placeholder="Title or description" />
-            </label>
-            <label>
-              Tag
-              <input id="meal-search-tag" type="text" placeholder="quick" />
-            </label>
-            <label>
-              Ingredient
-              <input id="meal-search-ingredient" type="text" placeholder="tomato" />
-            </label>
-            <button id="meal-search-reset" type="button" class="ghost">Reset</button>
-          </form>
+            <form id="meal-search-form" class="inline-form" autocomplete="off">
+              <label>
+                Text search
+                <input id="meal-search-text" type="text" placeholder="Title or description" />
+              </label>
+              <label>
+                Tag
+                <input id="meal-search-tag" type="text" placeholder="quick" />
+              </label>
+              <label>
+                Ingredient
+                <input id="meal-search-ingredient" type="text" placeholder="tomato" />
+              </label>
+              <button id="meal-search-reset" type="button" class="ghost">Reset</button>
+            </form>
 
-          <div id="meals-list" class="stack"></div>
-        </section>
+            <div id="meals-list" class="stack"></div>
+          </section>
 
-        <section id="pantry-panel" role="tabpanel" class="hidden stack">
-          <div class="panel-header">
-            <h3>Pantry</h3>
-            <span class="meta">Right-click pantry items to move between weekly and other.</span>
-          </div>
+          <section id="pantry-panel" role="tabpanel" class="hidden stack">
+            <div class="panel-header">
+              <h3>Pantry</h3>
+              <span class="meta">Right-click pantry items to move between weekly and other.</span>
+            </div>
 
-          <div class="subtab-nav" role="tablist" aria-label="Pantry views">
-            <button id="pantry-view-list-button" type="button" class="active">List</button>
-            <button id="pantry-view-history-button" type="button" class="ghost">History</button>
-          </div>
+            <div class="subtab-nav" role="tablist" aria-label="Pantry views">
+              <button id="pantry-view-list-button" type="button" class="active">List</button>
+              <button id="pantry-view-history-button" type="button" class="ghost">History</button>
+            </div>
 
-          <div id="pantry-list-view" class="two-col">
-            <article class="card">
-              <h4>Weekly</h4>
-              <ul id="pantry-weekly-list" class="panel-list"></ul>
-            </article>
+            <div id="pantry-list-view" class="two-col">
+              <article class="card">
+                <h4>Weekly</h4>
+                <ul id="pantry-weekly-list" class="panel-list"></ul>
+              </article>
 
-            <article class="card">
-              <h4>Other</h4>
-              <ul id="pantry-other-list" class="panel-list"></ul>
-            </article>
-          </div>
+              <article class="card">
+                <h4>Other</h4>
+                <ul id="pantry-other-list" class="panel-list"></ul>
+              </article>
+            </div>
 
-          <div id="pantry-history-view" class="hidden">
-            <ul id="pantry-history-list" class="panel-list"></ul>
-          </div>
-        </section>
+            <div id="pantry-history-view" class="hidden">
+              <ul id="pantry-history-list" class="panel-list"></ul>
+            </div>
+          </section>
+        </div>
       </section>
     </div>
 

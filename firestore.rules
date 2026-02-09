@@ -44,52 +44,22 @@ service cloud.firestore {
 
     function validMealTags(tags) {
       return tags is list
-        && tags.size() <= 40
-        && tags.all(tag, tag is string && tag.size() > 0 && tag.size() <= 32);
+        && tags.size() <= 40;
     }
 
     function validMealIngredients(ingredients) {
       return ingredients is list
-        && ingredients.size() <= 80
-        && ingredients.all(
-          ingredient,
-          ingredient is map
-            && ingredient.keys().hasOnly(['id', 'name', 'usuallyNeedToBuy', 'defaultStoreId'])
-            && ingredient.name is string
-            && ingredient.name.size() > 0
-            && ingredient.name.size() <= 80
-            && ingredient.usuallyNeedToBuy is bool
-            && (!("id" in ingredient) || ingredient.id == null || (ingredient.id is string && ingredient.id.size() <= 120))
-            && (!("defaultStoreId" in ingredient)
-              || ingredient.defaultStoreId == null
-              || (ingredient.defaultStoreId is string && ingredient.defaultStoreId.size() <= 120))
-        );
+        && ingredients.size() <= 80;
     }
 
     function validIngredientPlan(plan) {
       return plan is list
-        && plan.size() <= 80
-        && plan.all(
-          entry,
-          entry is map
-            && entry.keys().hasOnly(['ingredientId', 'name', 'needToBuy', 'storeId'])
-            && entry.name is string
-            && entry.name.size() > 0
-            && entry.name.size() <= 80
-            && entry.needToBuy is bool
-            && (!("ingredientId" in entry)
-              || entry.ingredientId == null
-              || (entry.ingredientId is string && entry.ingredientId.size() <= 120))
-            && (!("storeId" in entry)
-              || entry.storeId == null
-              || (entry.storeId is string && entry.storeId.size() <= 120))
-        );
+        && plan.size() <= 80;
     }
 
     function validEaterUids(uids) {
       return uids is list
-        && uids.size() <= 30
-        && uids.all(uid, uid is string && uid.size() > 0 && uid.size() <= 120);
+        && uids.size() <= 30;
     }
 
     function validHouseholdCreate() {
@@ -132,7 +102,15 @@ service cloud.firestore {
         && request.resource.data.displayName.size() <= 100
         && request.resource.data.role in ['owner', 'member']
         && request.resource.data.joinCode is string
-        && request.resource.data.joinCode == get(householdPath(householdId)).data.inviteCode;
+        && request.resource.data.joinCode == (
+          exists(householdPath(householdId))
+            ? get(householdPath(householdId)).data.inviteCode
+            : (
+              existsAfter(householdPath(householdId))
+                ? getAfter(householdPath(householdId)).data.inviteCode
+                : null
+            )
+        );
     }
 
     function validStoreDoc() {
