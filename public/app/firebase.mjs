@@ -13,10 +13,6 @@ function sleep(ms) {
   });
 }
 
-function isLocalHost(hostname) {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
-}
-
 function hasRequiredConfig(config) {
   return REQUIRED_CONFIG_KEYS.every((key) => {
     const value = config?.[key];
@@ -37,14 +33,7 @@ function normalizeRuntimeConfig(config) {
     return null;
   }
 
-  const normalized = { ...config };
-  const hostname = window.location?.hostname ?? 'localhost';
-
-  if (!isLocalHost(hostname) && normalized.authDomain !== hostname) {
-    normalized.authDomain = hostname;
-  }
-
-  return normalized;
+  return { ...config };
 }
 
 async function waitForFirebaseSdk(timeoutMs = FIREBASE_WAIT_TIMEOUT_MS) {
