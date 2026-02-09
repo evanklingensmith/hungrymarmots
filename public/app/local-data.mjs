@@ -612,3 +612,27 @@ export function listenActivity(context, householdId, callback, onError, limit = 
     },
   });
 }
+
+export function getSyncConflictState() {
+  return {
+    clientId: LOCAL_MODE_USER.uid,
+    pendingWrites: 0,
+    count: 0,
+    conflicts: [],
+  };
+}
+
+export function subscribeSyncConflicts(callback) {
+  if (typeof callback === 'function') {
+    callback(getSyncConflictState());
+  }
+
+  return () => {};
+}
+
+export async function resolveSyncConflicts() {
+  return {
+    resolved: 0,
+    remaining: 0,
+  };
+}

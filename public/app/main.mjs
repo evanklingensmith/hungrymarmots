@@ -29,6 +29,13 @@ const state = {
   activeTab: 'planner',
   unsubs: [],
   weekUnsub: null,
+  syncUnsub: null,
+  sync: {
+    clientId: null,
+    pendingWrites: 0,
+    count: 0,
+    conflicts: [],
+  },
 };
 
 const elements = {};
@@ -43,6 +50,10 @@ function cacheElements() {
   elements.error = document.getElementById('global-error');
   elements.status = document.getElementById('status-message');
   elements.modeBanner = document.getElementById('mode-banner');
+  elements.syncBanner = document.getElementById('sync-banner');
+  elements.syncBannerMessage = document.getElementById('sync-banner-message');
+  elements.syncUseServerButton = document.getElementById('sync-use-server');
+  elements.syncReapplyLocalButton = document.getElementById('sync-reapply-local');
 
   elements.loginButton = document.getElementById('login-button');
   elements.authToggleButton = document.getElementById('auth-toggle-button');
@@ -166,6 +177,69 @@ function renderModeBanner() {
   elements.modeBanner.classList.add('hidden');
   elements.authToggleButton.textContent = 'Sign out';
   elements.authToggleButton.disabled = false;
+}
+
+function clearSyncSubscription() {
+  if (state.syncUnsub) {
+    try {
+      state.syncUnsub();
+    } catch (error) {
+      console.warn('Failed to unsubscribe sync listener', error);
+    }
+  }
+
+  state.syncUnsub = null;
+  state.sync = {
+    clientId: null,
+    pendingWrites: 0,
+    count: 0,
+    conflicts: [],
+  };
+}
+
+function renderSyncBanner() {
+  if (!elements.syncBanner || !elements.syncBannerMessage) {
+    return;
+  }
+
+  const pendingWrites = Number(state.sync?.pendingWrites ?? 0);
+  const conflicts = Number(state.sync?.count ?? 0);
+  const hasIssues = !isLocalMode() && (pendingWrites > 0 || conflicts > 0);
+
+  elements.syncBanner.classList.toggle('hidden', !hasIssues);
+  elements.syncUseServerButton?.classList.toggle('hidden', conflicts <= 0);
+  elements.syncReapplyLocalButton?.classList.toggle('hidden', conflicts <= 0);
+
+  if (!hasIssues) {
+    elements.syncBannerMessage.textContent = '';
+    return;
+  }
+
+  if (conflicts > 0) {
+    elements.syncBannerMessage.textContent = `Sync conflict detected on ${conflicts} item${conflicts === 1 ? '' : 's'}. Choose how to resolve it.`;
+    return;
+  }
+
+  elements.syncBannerMessage.textContent = `Syncing ${pendingWrites} local change${pendingWrites === 1 ? '' : 's'}...`;
+}
+
+function attachSyncSubscription() {
+  clearSyncSubscription();
+
+  if (!state.dataApi || typeof state.dataApi.subscribeSyncConflicts !== 'function') {
+    renderSyncBanner();
+    return;
+  }
+
+  state.syncUnsub = state.dataApi.subscribeSyncConflicts((snapshot) => {
+    state.sync = snapshot ?? {
+      clientId: null,
+      pendingWrites: 0,
+      count: 0,
+      conflicts: [],
+    };
+    renderSyncBanner();
+  });
 }
 
 function resetHouseholdState() {
@@ -433,6 +507,7 @@ function renderSettings() {
 
 function renderAll() {
   renderModeBanner();
+  renderSyncBanner();
   renderAuthDetails();
   renderHouseholdList();
   renderActiveHouseholdSelect();
@@ -585,6 +660,7 @@ async function enterLocalMode(statusMessage = localModeStatusMessage()) {
 
   state.dataContext = state.localContext;
   state.user = localData.LOCAL_MODE_USER;
+  attachSyncSubscription();
 
   showView('app');
   setStatus(statusMessage);
@@ -596,6 +672,7 @@ async function enterRemoteMode(user) {
   state.dataApi = remoteData;
   state.dataContext = state.services.db;
   state.user = user;
+  attachSyncSubscription();
 
   showView('household');
   setStatus('Loading households...');
@@ -884,6 +961,37 @@ function bindEvents() {
 
       elements.locationNameInput.value = '';
       setStatus('Location added.');
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  elements.syncUseServerButton?.addEventListener('click', async () => {
+    clearError();
+
+    if (!state.dataApi || typeof state.dataApi.resolveSyncConflicts !== 'function') {
+      return;
+    }
+
+    try {
+      await state.dataApi.resolveSyncConflicts(state.dataContext, 'server');
+      subscribeToHouseholdData();
+      setStatus('Resolved sync conflicts with server data.');
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  elements.syncReapplyLocalButton?.addEventListener('click', async () => {
+    clearError();
+
+    if (!state.dataApi || typeof state.dataApi.resolveSyncConflicts !== 'function') {
+      return;
+    }
+
+    try {
+      await state.dataApi.resolveSyncConflicts(state.dataContext, 'local');
+      setStatus('Reapplying local changes after conflict...');
     } catch (error) {
       showError(error);
     }

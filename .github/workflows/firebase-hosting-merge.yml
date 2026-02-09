@@ -11,7 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm ci && npm run build
+      - name: Stamp build version
+        run: |
+          BUILD_VERSION="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
+          sed -i "s/__BUILD_VERSION__/${BUILD_VERSION}/g" public/index.html
+      - run: npm ci && npm run build --if-present
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

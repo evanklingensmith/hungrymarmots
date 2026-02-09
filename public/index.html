@@ -90,6 +90,23 @@
         font-weight: 600;
       }
 
+      .sync-banner {
+        margin: 0.5rem 0 0;
+        border: 1px solid #f7b27a;
+        border-radius: 10px;
+        background: #fff3e8;
+        padding: 0.55rem 0.65rem;
+        display: grid;
+        gap: 0.55rem;
+      }
+
+      #sync-banner-message {
+        margin: 0;
+        color: #7a3412;
+        font-size: 0.9rem;
+        font-weight: 600;
+      }
+
       #global-error {
         margin: 0.4rem 0 0;
         color: var(--danger);
@@ -379,6 +396,13 @@
         </div>
         <p id="status-message">Starting app...</p>
         <p id="mode-banner" class="hidden"></p>
+        <div id="sync-banner" class="sync-banner hidden" role="status" aria-live="polite">
+          <p id="sync-banner-message"></p>
+          <div class="actions">
+            <button id="sync-use-server" type="button" class="ghost hidden">Use server version</button>
+            <button id="sync-reapply-local" type="button" class="hidden">Reapply my changes</button>
+          </div>
+        </div>
         <p id="global-error" role="alert" aria-live="polite"></p>
       </header>
 
@@ -542,6 +566,17 @@
     <script defer src="/__/firebase/12.9.0/firebase-auth-compat.js"></script>
     <script defer src="/__/firebase/12.9.0/firebase-firestore-compat.js"></script>
     <script defer src="/__/firebase/init.js"></script>
-    <script type="module" src="/app/main.mjs"></script>
+    <script>
+      // Fallback for environments where /__/firebase/init.js is unavailable or unconfigured.
+      window.firebaseConfig = window.firebaseConfig || {
+        apiKey: "AIzaSyAwz-PJRBfAa1yyVosCXCRi-Vz0ll9o9BQ",
+        authDomain: "hungrymarmots.firebaseapp.com",
+        projectId: "hungrymarmots",
+        storageBucket: "hungrymarmots.firebasestorage.app",
+        messagingSenderId: "81731552729",
+        appId: "1:81731552729:web:3240811c6fa16f511a05c8"
+      };
+    </script>
+    <script type="module" src="/app/main.mjs?v=__BUILD_VERSION__"></script>
   </body>
 </html>

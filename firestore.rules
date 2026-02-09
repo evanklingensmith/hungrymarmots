@@ -44,21 +44,60 @@ service cloud.firestore {
       return !(key in data) || data[key] == null || (data[key] is string && data[key].size() <= maxSize);
     }
 
-    function validMealDoc(householdId) {
-      return request.resource.data.keys().hasOnly(['mealName', 'cookUid', 'updatedAt', 'updatedBy'])
-        && validOptionalString(request.resource.data, 'mealName', 120)
-        && (!("cookUid" in request.resource.data)
-          || request.resource.data.cookUid == null
-          || (
-            request.resource.data.cookUid is string
-            && exists(memberPath(householdId, request.resource.data.cookUid))
-          ))
-        && (!("updatedBy" in request.resource.data)
-          || request.resource.data.updatedBy == request.auth.uid);
+    function validVersionMeta(meta) {
+      return meta is map
+        && meta.keys().hasOnly(['version', 'baseVersion', 'updatedAt', 'updatedBy', 'clientCounter'])
+        && meta.version is int
+        && meta.version >= 0
+        && meta.baseVersion is int
+        && meta.baseVersion >= 0
+        && meta.updatedBy is string
+        && meta.updatedBy.size() > 0
+        && meta.updatedBy.size() <= 120
+        && meta.clientCounter is int
+        && meta.clientCounter >= 0
+        && (!("updatedAt" in meta) || meta.updatedAt is timestamp);
     }
 
-    function validGroceryDoc(householdId) {
+    function validMealPayload(data, householdId) {
+      return data.keys().hasOnly(['mealName', 'cookUid', 'updatedAt', 'updatedBy'])
+        && validOptionalString(data, 'mealName', 120)
+        && (!("cookUid" in data)
+          || data.cookUid == null
+          || (
+            data.cookUid is string
+            && exists(memberPath(householdId, data.cookUid))
+          ))
+        && (!("updatedBy" in data)
+          || data.updatedBy == request.auth.uid)
+        && (!("updatedAt" in data) || data.updatedAt is timestamp);
+    }
+
+    function validMealDocLegacy(householdId) {
+      return validMealPayload(request.resource.data, householdId);
+    }
+
+    function validMealDocEnvelope(householdId) {
       return request.resource.data.keys().hasOnly([
+          'data',
+          'updatedAt',
+          'meta',
+          'mealName',
+          'cookUid',
+          'updatedBy',
+        ])
+        && request.resource.data.data is map
+        && validMealPayload(request.resource.data.data, householdId)
+        && validVersionMeta(request.resource.data.meta)
+        && (!("updatedAt" in request.resource.data) || request.resource.data.updatedAt is timestamp);
+    }
+
+    function validMealDoc(householdId) {
+      return validMealDocLegacy(householdId) || validMealDocEnvelope(householdId);
+    }
+
+    function validGroceryPayload(data, householdId) {
+      return data.keys().hasOnly([
           'name',
           'quantity',
           'notes',
@@ -72,36 +111,89 @@ service cloud.firestore {
           'createdAt',
           'updatedAt',
         ])
-        && (request.resource.data.name is string)
-        && request.resource.data.name.size() > 0
-        && request.resource.data.name.size() <= 80
-        && validOptionalString(request.resource.data, 'quantity', 24)
-        && validOptionalString(request.resource.data, 'notes', 240)
-        && validOptionalString(request.resource.data, 'personTag', 50)
-        && (!("locationId" in request.resource.data)
-          || request.resource.data.locationId == null
+        && (data.name is string)
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && validOptionalString(data, 'quantity', 24)
+        && validOptionalString(data, 'notes', 240)
+        && validOptionalString(data, 'personTag', 50)
+        && (!("locationId" in data)
+          || data.locationId == null
           || (
-            request.resource.data.locationId is string
-            && exists(locationPath(householdId, request.resource.data.locationId))
+            data.locationId is string
+            && exists(locationPath(householdId, data.locationId))
           ))
-        && (!("personUid" in request.resource.data)
-          || request.resource.data.personUid == null
+        && (!("personUid" in data)
+          || data.personUid == null
           || (
-            request.resource.data.personUid is string
-            && exists(memberPath(householdId, request.resource.data.personUid))
+            data.personUid is string
+            && exists(memberPath(householdId, data.personUid))
           ))
-        && (!("mealDayId" in request.resource.data)
-          || request.resource.data.mealDayId == null
+        && (!("mealDayId" in data)
+          || data.mealDayId == null
           || (
-            request.resource.data.mealDayId is string
-            && isDayId(request.resource.data.mealDayId)
+            data.mealDayId is string
+            && isDayId(data.mealDayId)
           ))
-        && (!("completed" in request.resource.data) || request.resource.data.completed is bool)
-        && (!("createdBy" in request.resource.data)
-          || request.resource.data.createdBy == null
-          || request.resource.data.createdBy is string)
-        && (!("updatedBy" in request.resource.data)
-          || request.resource.data.updatedBy == request.auth.uid);
+        && (!("completed" in data) || data.completed is bool)
+        && (!("createdBy" in data)
+          || data.createdBy == null
+          || data.createdBy is string)
+        && (!("updatedBy" in data)
+          || data.updatedBy == request.auth.uid)
+        && (!("createdAt" in data) || data.createdAt is timestamp)
+        && (!("updatedAt" in data) || data.updatedAt is timestamp);
+    }
+
+    function validGroceryDocLegacy(householdId) {
+      return validGroceryPayload(request.resource.data, householdId);
+    }
+
+    function validGroceryDocEnvelope(householdId) {
+      return request.resource.data.keys().hasOnly([
+          'data',
+          'updatedAt',
+          'meta',
+          'name',
+          'quantity',
+          'notes',
+          'locationId',
+          'personTag',
+          'personUid',
+          'mealDayId',
+          'completed',
+          'createdBy',
+          'updatedBy',
+          'createdAt',
+        ])
+        && request.resource.data.data is map
+        && validGroceryPayload(request.resource.data.data, householdId)
+        && validVersionMeta(request.resource.data.meta)
+        && (!("updatedAt" in request.resource.data) || request.resource.data.updatedAt is timestamp);
+    }
+
+    function validGroceryDoc(householdId) {
+      return validGroceryDocLegacy(householdId) || validGroceryDocEnvelope(householdId);
+    }
+
+    function validLocationPayload(data) {
+      return data.keys().hasOnly(['name', 'createdBy', 'createdAt'])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 40
+        && data.createdBy == request.auth.uid
+        && (!("createdAt" in data) || data.createdAt is timestamp);
+    }
+
+    function validLocationDoc() {
+      return validLocationPayload(request.resource.data)
+        || (
+          request.resource.data.keys().hasOnly(['data', 'updatedAt', 'meta', 'name', 'createdBy', 'createdAt'])
+          && request.resource.data.data is map
+          && validLocationPayload(request.resource.data.data)
+          && validVersionMeta(request.resource.data.meta)
+          && (!("updatedAt" in request.resource.data) || request.resource.data.updatedAt is timestamp)
+        );
     }
 
     match /users/{uid} {
@@ -168,11 +260,7 @@ service cloud.firestore {
       match /locations/{locationId} {
         allow read: if isMember(householdId);
         allow create, update: if isMember(householdId)
-          && request.resource.data.keys().hasOnly(['name', 'createdBy', 'createdAt'])
-          && request.resource.data.name is string
-          && request.resource.data.name.size() > 0
-          && request.resource.data.name.size() <= 40
-          && request.resource.data.createdBy == request.auth.uid;
+          && validLocationDoc();
         allow delete: if isMember(householdId);
       }
 
