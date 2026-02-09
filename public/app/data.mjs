@@ -283,6 +283,20 @@ export async function listUserHouseholds(db, uid) {
     .sort((left, right) => String(left.name).localeCompare(String(right.name)));
 }
 
+export async function getHousehold(db, householdId) {
+  const normalizedId = String(householdId || '').trim();
+  if (!normalizedId) {
+    return null;
+  }
+
+  const doc = await householdRef(db, normalizedId).get();
+  if (!doc.exists) {
+    return null;
+  }
+
+  return mapHousehold(doc);
+}
+
 export async function getDefaultHouseholdId(db, uid) {
   const doc = await userRef(db, uid).get();
   if (!doc.exists) {
@@ -347,10 +361,7 @@ export async function createHousehold(db, user, rawHouseholdName) {
   const householdName = normalizeHouseholdName(rawHouseholdName);
   const inviteCode = generateInviteCode();
   const household = householdCollection(db).doc();
-  const member = memberCollection(db, household.id).doc(user.uid);
-  const batch = db.batch();
-
-  batch.set(household, {
+  await household.set({
     name: householdName,
     ownerUid: user.uid,
     memberUids: [user.uid],
@@ -359,17 +370,24 @@ export async function createHousehold(db, user, rawHouseholdName) {
     updatedAt: serverTimestamp(),
   });
 
-  batch.set(member, memberPayload(user, 'owner', inviteCode));
-  batch.set(
-    userRef(db, user.uid),
-    {
-      defaultHouseholdId: household.id,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
+  try {
+    await memberCollection(db, household.id).doc(user.uid).set(memberPayload(user, 'owner', inviteCode));
+  } catch (error) {
+    console.warn('Failed to write owner membership profile during household create', error);
+  }
 
-  await batch.commit();
+  try {
+    await userRef(db, user.uid).set(
+      {
+        defaultHouseholdId: household.id,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  } catch (error) {
+    console.warn('Failed to store default household id during household create', error);
+  }
+
   await addActivity(db, household.id, user, 'system', 'household-created', `Created household "${householdName}".`);
 
   return household.id;

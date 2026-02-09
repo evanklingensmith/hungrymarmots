@@ -1118,7 +1118,25 @@ async function refreshHouseholds(preferredHouseholdId = null) {
     return;
   }
 
-  const households = await state.dataApi.listUserHouseholds(state.dataContext, state.user.uid);
+  let households = [];
+
+  try {
+    households = await state.dataApi.listUserHouseholds(state.dataContext, state.user.uid);
+  } catch (error) {
+    // Fallback for edge cases where collection list rules deny but direct get is allowed.
+    if (!preferredHouseholdId || typeof state.dataApi.getHousehold !== 'function') {
+      throw error;
+    }
+
+    const fallbackHousehold = await state.dataApi.getHousehold(state.dataContext, preferredHouseholdId);
+    if (!fallbackHousehold) {
+      throw error;
+    }
+
+    households = [fallbackHousehold];
+    console.warn('Fell back to direct household read after listUserHouseholds failed', error);
+  }
+
   state.households = households;
 
   let selectedId = preferredHouseholdId;
@@ -1134,11 +1152,19 @@ async function refreshHouseholds(preferredHouseholdId = null) {
   state.activeHouseholdId = selectedId;
 
   if (selectedId && typeof state.dataApi.setDefaultHouseholdId === 'function') {
-    await state.dataApi.setDefaultHouseholdId(state.dataContext, state.user.uid, selectedId);
+    try {
+      await state.dataApi.setDefaultHouseholdId(state.dataContext, state.user.uid, selectedId);
+    } catch (error) {
+      console.warn('Unable to persist default household id', error);
+    }
   }
 
   if (selectedId) {
-    await ensureActiveHouseholdMembership(selectedId);
+    try {
+      await ensureActiveHouseholdMembership(selectedId);
+    } catch (error) {
+      console.warn('Unable to ensure household membership document', error);
+    }
   }
 
   renderHeaderButtons();
@@ -1307,26 +1333,54 @@ async function selectHousehold(householdId) {
   closeHouseholdModal();
 }
 
+function withStepError(prefix, error) {
+  const baseMessage = typeof error === 'string' ? error : error?.message || 'Unknown error';
+  const wrapped = new Error(`${prefix}: ${baseMessage}`);
+  if (error && typeof error === 'object' && 'code' in error) {
+    wrapped.code = error.code;
+  }
+  return wrapped;
+}
+
 async function createHouseholdAndRefresh(rawHouseholdName) {
-  const householdId = await state.dataApi.createHousehold(
-    state.dataContext,
-    state.user,
-    rawHouseholdName,
-  );
-  await refreshHouseholds(householdId);
+  let householdId;
+  try {
+    householdId = await state.dataApi.createHousehold(
+      state.dataContext,
+      state.user,
+      rawHouseholdName,
+    );
+  } catch (error) {
+    throw withStepError('Create household write failed', error);
+  }
+
+  try {
+    await refreshHouseholds(householdId);
+  } catch (error) {
+    throw withStepError('Created household but failed to load account households', error);
+  }
   closeHouseholdModal();
   setStatus('Household created.');
 }
 
 async function joinHouseholdAndRefresh(rawHouseholdId, rawInviteCode) {
   const joinedHouseholdId = String(rawHouseholdId || '').trim();
-  await state.dataApi.joinHousehold(
-    state.dataContext,
-    state.user,
-    rawHouseholdId,
-    rawInviteCode,
-  );
-  await refreshHouseholds(joinedHouseholdId);
+  try {
+    await state.dataApi.joinHousehold(
+      state.dataContext,
+      state.user,
+      rawHouseholdId,
+      rawInviteCode,
+    );
+  } catch (error) {
+    throw withStepError('Join household write failed', error);
+  }
+
+  try {
+    await refreshHouseholds(joinedHouseholdId);
+  } catch (error) {
+    throw withStepError('Joined household but failed to load account households', error);
+  }
   closeHouseholdModal();
   setStatus('Joined household.');
 }
