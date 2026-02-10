@@ -1202,6 +1202,7 @@ function subscribeToHouseholdData() {
   }
 
   const householdId = state.activeHouseholdId;
+  const listenerError = (label) => (error) => showError(withStepError(label, error));
 
   state.unsubs.push(
     state.dataApi.listenMembers(
@@ -1211,7 +1212,7 @@ function subscribeToHouseholdData() {
         state.members = members;
         renderWeeklyGrid();
       },
-      showError,
+      listenerError('Members listener failed'),
     ),
   );
 
@@ -1229,7 +1230,7 @@ function subscribeToHouseholdData() {
           renderMealExistingConfig();
         }
       },
-      showError,
+      listenerError('Stores listener failed'),
     ),
   );
 
@@ -1245,7 +1246,7 @@ function subscribeToHouseholdData() {
           renderMealExistingConfig();
         }
       },
-      showError,
+      listenerError('Meals listener failed'),
     ),
   );
 
@@ -1257,7 +1258,7 @@ function subscribeToHouseholdData() {
         state.groceryItems = items;
         renderGroceryStoreGrid();
       },
-      showError,
+      listenerError('Grocery listener failed'),
     ),
   );
 
@@ -1270,7 +1271,7 @@ function subscribeToHouseholdData() {
         renderWeeklyPantrySnippet();
         renderPantryLists();
       },
-      showError,
+      listenerError('Pantry listener failed'),
     ),
   );
 
@@ -1283,7 +1284,7 @@ function subscribeToHouseholdData() {
         renderGroceryHistory();
         renderPantryHistory();
       },
-      showError,
+      listenerError('Activity listener failed'),
       120,
     ),
   );
@@ -1306,7 +1307,7 @@ function subscribeToWeek() {
       state.weekPlan = mergeDayDocs(dayDocs);
       renderWeeklyGrid();
     },
-    showError,
+    (error) => showError(withStepError('Week listener failed', error)),
   );
 }
 
