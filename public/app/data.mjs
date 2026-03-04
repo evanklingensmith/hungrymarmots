@@ -487,37 +487,28 @@ export async function joinHousehold(db, user, rawHouseholdId, rawInviteCode) {
 
   const household = householdRef(db, householdId);
 
-  await db.runTransaction(async (transaction) => {
-    const householdDoc = await transaction.get(household);
+  const batch = db.batch();
 
-    if (!householdDoc.exists) {
-      throw new Error('Household not found.');
-    }
-
-    const data = householdDoc.data() || {};
-    if (String(data.inviteCode || '').toUpperCase() !== inviteCode) {
-      throw new Error('Invite code does not match.');
-    }
-
-    transaction.set(memberCollection(db, householdId).doc(user.uid), memberPayload(user, 'member', inviteCode), {
-      merge: true,
-    });
-
-    transaction.update(household, {
-      memberUids: arrayUnion(user.uid),
-      updatedAt: serverTimestamp(),
-    });
-
-    transaction.set(
-      userRef(db, user.uid),
-      {
-        defaultHouseholdId: householdId,
-        householdIds: arrayUnion(householdId),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
+  batch.set(memberCollection(db, householdId).doc(user.uid), memberPayload(user, 'member', inviteCode), {
+    merge: true,
   });
+
+  batch.update(household, {
+    memberUids: arrayUnion(user.uid),
+    updatedAt: serverTimestamp(),
+  });
+
+  batch.set(
+    userRef(db, user.uid),
+    {
+      defaultHouseholdId: householdId,
+      householdIds: arrayUnion(householdId),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  await batch.commit();
 
   await addActivity(db, householdId, user, 'system', 'household-join', 'Joined household.');
 }
