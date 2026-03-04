@@ -276,11 +276,50 @@ async function addActivity(db, householdId, user, scope, action, message, undo =
 }
 
 export async function listUserHouseholds(db, uid) {
-  const snapshot = await householdCollection(db).where('memberUids', 'array-contains', uid).get();
+  const [memberResult, ownerResult] = await Promise.allSettled([
+    householdCollection(db).where('memberUids', 'array-contains', uid).get(),
+    householdCollection(db).where('ownerUid', '==', uid).get(),
+  ]);
 
-  return snapshot.docs
+  const docsById = new Map();
+
+  if (memberResult.status === 'fulfilled') {
+    memberResult.value.docs.forEach((doc) => {
+      docsById.set(doc.id, doc);
+    });
+  } else {
+    console.warn('Failed memberUids household lookup', memberResult.reason);
+  }
+
+  if (ownerResult.status === 'fulfilled') {
+    ownerResult.value.docs.forEach((doc) => {
+      docsById.set(doc.id, doc);
+    });
+  } else {
+    console.warn('Failed ownerUid household lookup', ownerResult.reason);
+  }
+
+  if (!docsById.size) {
+    throw memberResult.status === 'rejected'
+      ? memberResult.reason
+      : ownerResult.status === 'rejected'
+        ? ownerResult.reason
+        : new Error('Unable to load households.');
+  }
+
+  return Array.from(docsById.values())
     .map(mapHousehold)
     .sort((left, right) => String(left.name).localeCompare(String(right.name)));
+}
+
+export async function debugQueryHouseholdsByMember(db, uid) {
+  const snapshot = await householdCollection(db).where('memberUids', 'array-contains', uid).get();
+  return snapshot.docs.map(mapHousehold);
+}
+
+export async function debugQueryHouseholdsByOwner(db, uid) {
+  const snapshot = await householdCollection(db).where('ownerUid', '==', uid).get();
+  return snapshot.docs.map(mapHousehold);
 }
 
 export async function getHousehold(db, householdId) {
@@ -297,6 +336,20 @@ export async function getHousehold(db, householdId) {
   return mapHousehold(doc);
 }
 
+export async function debugGetUserDoc(db, uid) {
+  const doc = await userRef(db, uid).get();
+  if (!doc.exists) {
+    return null;
+  }
+
+  const data = doc.data() || {};
+  return {
+    defaultHouseholdId: typeof data.defaultHouseholdId === 'string' ? data.defaultHouseholdId : null,
+    householdIds: Array.isArray(data.householdIds) ? data.householdIds : [],
+    updatedAt: data.updatedAt || null,
+  };
+}
+
 export async function getDefaultHouseholdId(db, uid) {
   const doc = await userRef(db, uid).get();
   if (!doc.exists) {
@@ -307,10 +360,44 @@ export async function getDefaultHouseholdId(db, uid) {
   return typeof data.defaultHouseholdId === 'string' && data.defaultHouseholdId ? data.defaultHouseholdId : null;
 }
 
+export async function listHouseholdIdsForUser(db, uid) {
+  const doc = await userRef(db, uid).get();
+  if (!doc.exists) {
+    return [];
+  }
+
+  const data = doc.data() || {};
+  if (!Array.isArray(data.householdIds)) {
+    return [];
+  }
+
+  return data.householdIds
+    .filter((value) => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.trim());
+}
+
 export async function setDefaultHouseholdId(db, uid, householdId) {
   await userRef(db, uid).set(
     {
       defaultHouseholdId: householdId || null,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export async function saveHouseholdIdsForUser(db, uid, householdIds) {
+  const uniqueIds = Array.from(
+    new Set(
+      (Array.isArray(householdIds) ? householdIds : [])
+        .filter((value) => typeof value === 'string' && value.trim().length > 0)
+        .map((value) => value.trim()),
+    ),
+  );
+
+  await userRef(db, uid).set(
+    {
+      householdIds: uniqueIds,
       updatedAt: serverTimestamp(),
     },
     { merge: true },
@@ -380,6 +467,7 @@ export async function createHousehold(db, user, rawHouseholdName) {
     await userRef(db, user.uid).set(
       {
         defaultHouseholdId: household.id,
+        householdIds: arrayUnion(household.id),
         updatedAt: serverTimestamp(),
       },
       { merge: true },
@@ -428,6 +516,7 @@ export async function joinHousehold(db, user, rawHouseholdId, rawInviteCode) {
       userRef(db, user.uid),
       {
         defaultHouseholdId: householdId,
+        householdIds: arrayUnion(householdId),
         updatedAt: serverTimestamp(),
       },
       { merge: true },
@@ -673,6 +762,44 @@ export async function createMeal(db, householdId, input, user) {
   await addActivity(db, householdId, user, 'weekly', 'meal-add', `Added meal ${meal.title}.`);
 
   return doc.id;
+}
+
+export async function bulkCreateMeals(db, householdId, meals, user) {
+  const created = [];
+  const errors = [];
+
+  for (let i = 0; i < meals.length; i += 1) {
+    try {
+      const meal = normalizeMealDraft(meals[i]);
+      const doc = mealCollection(db, householdId).doc();
+
+      const batch = db.batch();
+      batch.set(doc, {
+        title: meal.title,
+        description: meal.description,
+        tags: meal.tags,
+        ingredients: meal.ingredients.map((ingredient) => ({
+          id: ingredient.id || mealCollection(db, householdId).doc().id,
+          name: ingredient.name,
+          usuallyNeedToBuy: ingredient.usuallyNeedToBuy,
+          defaultStoreId: ingredient.defaultStoreId,
+        })),
+        createdBy: user.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      await batch.commit();
+      created.push(doc.id);
+    } catch (error) {
+      errors.push({ index: i, title: meals[i]?.title || null, message: error.message });
+    }
+  }
+
+  if (created.length > 0) {
+    await addActivity(db, householdId, user, 'weekly', 'meal-bulk-import', `Imported ${created.length} meal(s).`);
+  }
+
+  return { created: created.length, errors };
 }
 
 function groceryItemFromIngredient(householdId, weekId, dayId, mealId, ingredient, user) {

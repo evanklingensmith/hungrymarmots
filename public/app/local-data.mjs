@@ -900,6 +900,28 @@ export async function createMeal(context, householdId, input, user) {
   return id;
 }
 
+export async function bulkCreateMeals(context, householdId, meals, user) {
+  const created = [];
+  const errors = [];
+
+  for (let i = 0; i < meals.length; i += 1) {
+    try {
+      const id = await createMeal(context, householdId, meals[i], user);
+      created.push(id);
+    } catch (error) {
+      errors.push({ index: i, title: meals[i]?.title || null, message: error.message });
+    }
+  }
+
+  if (created.length > 0) {
+    addActivity(context.state, householdId, user, 'weekly', 'meal-bulk-import', `Imported ${created.length} meal(s).`, null);
+    persist(context);
+    notifyListeners(context, 'activity', householdId);
+  }
+
+  return { created: created.length, errors };
+}
+
 export async function saveWeekDayPlan(context, householdId, weekId, dayId, input, user) {
   ensureAccess(context, householdId, user.uid);
 

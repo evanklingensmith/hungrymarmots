@@ -3,6 +3,7 @@ import * as localData from './local-data.mjs';
 import * as remoteData from './data.mjs';
 import { buildWeekDays, getWeekStartIso, shiftWeekIso, weekRangeLabel } from './utils/dates.mjs';
 import { createEmptyWeekPlan, mergeDayDocs, weekIdFromStart } from './utils/state.mjs';
+import { parseBulkMealJson } from './utils/validators.mjs';
 
 const state = {
   services: null,
@@ -71,6 +72,10 @@ function cacheElements() {
   elements.householdGateJoinForm = document.getElementById('household-gate-join-form');
   elements.householdGateIdInput = document.getElementById('household-gate-id');
   elements.householdGateCodeInput = document.getElementById('household-gate-code');
+  elements.householdDebugRun = document.getElementById('household-debug-run');
+  elements.householdDebugLoadForm = document.getElementById('household-debug-load-form');
+  elements.householdDebugHouseholdId = document.getElementById('household-debug-household-id');
+  elements.householdDebugOutput = document.getElementById('household-debug-output');
 
   elements.tabButtons = Array.from(document.querySelectorAll('[data-tab-target]'));
   elements.tabPanels = {
@@ -143,6 +148,15 @@ function cacheElements() {
   elements.storesModalClose = document.getElementById('stores-modal-close');
   elements.addStoreForm = document.getElementById('add-store-form');
   elements.storeNameInput = document.getElementById('store-name');
+
+  elements.importMealsButton = document.getElementById('import-meals-button');
+  elements.importMealsModal = document.getElementById('import-meals-modal');
+  elements.importMealsModalClose = document.getElementById('import-meals-modal-close');
+  elements.importMealsJson = document.getElementById('import-meals-json');
+  elements.importMealsSubmit = document.getElementById('import-meals-submit');
+  elements.importMealsResults = document.getElementById('import-meals-results');
+  elements.importMealsSummary = document.getElementById('import-meals-summary');
+  elements.importMealsErrors = document.getElementById('import-meals-errors');
   elements.storesManageList = document.getElementById('stores-manage-list');
 }
 
@@ -218,6 +232,16 @@ function activeHousehold() {
 
 function hasSelectedHousehold() {
   return Boolean(activeHousehold());
+}
+
+function householdVisibleToCurrentUser(household) {
+  const userUid = state.user?.uid;
+  if (!userUid || !household) {
+    return false;
+  }
+
+  return household.ownerUid === userUid
+    || (Array.isArray(household.memberUids) && household.memberUids.includes(userUid));
 }
 
 function inAppView() {
@@ -439,6 +463,7 @@ function forceHideAllAppModals() {
   elements.householdModal.classList.add('hidden');
   elements.storesModal.classList.add('hidden');
   elements.mealModal.classList.add('hidden');
+  elements.importMealsModal.classList.add('hidden');
   state.mealModal = {
     open: false,
     mode: 'day',
@@ -1118,32 +1143,108 @@ async function refreshHouseholds(preferredHouseholdId = null) {
     return;
   }
 
-  let households = [];
+  const userUid = state.user.uid;
+  const canGetHousehold = typeof state.dataApi.getHousehold === 'function';
 
-  try {
-    households = await state.dataApi.listUserHouseholds(state.dataContext, state.user.uid);
-  } catch (error) {
-    // Fallback for edge cases where collection list rules deny but direct get is allowed.
-    if (!preferredHouseholdId || typeof state.dataApi.getHousehold !== 'function') {
-      throw error;
+  function normalizeHouseholds(items) {
+    const docsById = new Map();
+    (Array.isArray(items) ? items : []).forEach((household) => {
+      if (!household || !household.id || !householdVisibleToCurrentUser(household)) {
+        return;
+      }
+      docsById.set(household.id, household);
+    });
+    return Array.from(docsById.values())
+      .sort((left, right) => String(left.name).localeCompare(String(right.name)));
+  }
+
+  async function loadHouseholdsByIds(ids) {
+    if (!canGetHousehold) {
+      return [];
     }
 
-    const fallbackHousehold = await state.dataApi.getHousehold(state.dataContext, preferredHouseholdId);
-    if (!fallbackHousehold) {
-      throw error;
+    const uniqueIds = Array.from(
+      new Set(
+        (Array.isArray(ids) ? ids : [])
+          .filter((value) => typeof value === 'string' && value.trim().length > 0)
+          .map((value) => value.trim()),
+      ),
+    );
+    if (!uniqueIds.length) {
+      return [];
     }
 
-    households = [fallbackHousehold];
-    console.warn('Fell back to direct household read after listUserHouseholds failed', error);
+    const docs = await Promise.all(
+      uniqueIds.map(async (householdId) => {
+        try {
+          return await state.dataApi.getHousehold(state.dataContext, householdId);
+        } catch (error) {
+          console.warn(`Unable to read household ${householdId}`, error);
+          return null;
+        }
+      }),
+    );
+    return normalizeHouseholds(docs);
+  }
+
+  let indexedIds = [];
+  if (typeof state.dataApi.listHouseholdIdsForUser === 'function') {
+    try {
+      indexedIds = await state.dataApi.listHouseholdIdsForUser(state.dataContext, userUid);
+    } catch (error) {
+      console.warn('Unable to read user household index', error);
+    }
+  }
+
+  let defaultHouseholdIdFromUser = null;
+  if (typeof state.dataApi.getDefaultHouseholdId === 'function') {
+    try {
+      defaultHouseholdIdFromUser = await state.dataApi.getDefaultHouseholdId(state.dataContext, userUid);
+    } catch (error) {
+      console.warn('Unable to read default household id', error);
+    }
+  }
+
+  let households = await loadHouseholdsByIds(indexedIds);
+
+  const fallbackIds = [preferredHouseholdId, defaultHouseholdIdFromUser]
+    .filter((value) => typeof value === 'string' && value.trim().length > 0);
+  if (!households.length && fallbackIds.length) {
+    households = await loadHouseholdsByIds(fallbackIds);
+  }
+
+  if (!households.length) {
+    try {
+      households = normalizeHouseholds(await state.dataApi.listUserHouseholds(state.dataContext, userUid));
+    } catch (error) {
+      console.warn('listUserHouseholds failed', error);
+      setHouseholdDebugOutput({
+        ranAt: new Date().toISOString(),
+        stage: 'refreshHouseholds:listUserHouseholds',
+        userUid,
+        indexedIds,
+        fallbackIds,
+        error: serializeError(error),
+      });
+      throw error;
+    }
   }
 
   state.households = households;
 
-  let selectedId = preferredHouseholdId;
-
-  if (!selectedId && typeof state.dataApi.getDefaultHouseholdId === 'function') {
-    selectedId = await state.dataApi.getDefaultHouseholdId(state.dataContext, state.user.uid);
+  if (households.length && typeof state.dataApi.saveHouseholdIdsForUser === 'function') {
+    try {
+      await state.dataApi.saveHouseholdIdsForUser(
+        state.dataContext,
+        state.user.uid,
+        households.map((household) => household.id),
+      );
+    } catch (error) {
+      console.warn('Unable to backfill user household index', error);
+    }
   }
+
+  let selectedId = preferredHouseholdId || defaultHouseholdIdFromUser;
 
   if (!selectedId || !households.some((household) => household.id === selectedId)) {
     selectedId = households.length ? households[0].id : null;
@@ -1341,6 +1442,233 @@ function withStepError(prefix, error) {
     wrapped.code = error.code;
   }
   return wrapped;
+}
+
+function serializeError(error) {
+  const message = typeof error === 'string' ? error : error?.message || 'Unknown error';
+  const code = error && typeof error === 'object' && 'code' in error ? error.code : null;
+
+  return {
+    message,
+    code,
+  };
+}
+
+function summarizeHouseholdForDebug(household) {
+  const currentUid = state.user?.uid || null;
+  const memberUids = Array.isArray(household?.memberUids) ? household.memberUids : [];
+
+  return {
+    id: household?.id || null,
+    name: household?.name || null,
+    ownerUid: household?.ownerUid || null,
+    memberCount: memberUids.length,
+    includesCurrentUserInMemberUids: Boolean(currentUid && memberUids.includes(currentUid)),
+    visibleToCurrentUser: householdVisibleToCurrentUser(household),
+  };
+}
+
+function setHouseholdDebugOutput(payload) {
+  if (!elements.householdDebugOutput) {
+    return;
+  }
+
+  if (typeof payload === 'string') {
+    elements.householdDebugOutput.textContent = payload;
+    return;
+  }
+
+  elements.householdDebugOutput.textContent = JSON.stringify(payload, null, 2);
+}
+
+async function runHouseholdDiagnostics() {
+  if (!state.user || !state.dataApi || !state.dataContext) {
+    setHouseholdDebugOutput('Diagnostics require an authenticated remote session.');
+    return;
+  }
+
+  const userUid = state.user.uid;
+  const report = {
+    ranAt: new Date().toISOString(),
+    mode: state.mode,
+    userUid,
+    activeHouseholdId: state.activeHouseholdId,
+    loadedHouseholdIds: state.households.map((entry) => entry.id),
+  };
+
+  async function captureCall(fn) {
+    try {
+      return {
+        ok: true,
+        value: await fn(),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: serializeError(error),
+      };
+    }
+  }
+
+  if (typeof state.dataApi.debugGetUserDoc === 'function') {
+    const userDocResult = await captureCall(() => {
+      return state.dataApi.debugGetUserDoc(state.dataContext, userUid);
+    });
+    report.userDoc = userDocResult.ok ? userDocResult.value : userDocResult.error;
+  } else if (typeof state.dataApi.listHouseholdIdsForUser === 'function'
+    || typeof state.dataApi.getDefaultHouseholdId === 'function') {
+    const [idsResult, defaultResult] = await Promise.all([
+      typeof state.dataApi.listHouseholdIdsForUser === 'function'
+        ? captureCall(() => state.dataApi.listHouseholdIdsForUser(state.dataContext, userUid))
+        : Promise.resolve({ ok: true, value: [] }),
+      typeof state.dataApi.getDefaultHouseholdId === 'function'
+        ? captureCall(() => state.dataApi.getDefaultHouseholdId(state.dataContext, userUid))
+        : Promise.resolve({ ok: true, value: null }),
+    ]);
+
+    report.userDoc = {
+      householdIds: idsResult.ok ? idsResult.value : idsResult.error,
+      defaultHouseholdId: defaultResult.ok ? defaultResult.value : defaultResult.error,
+    };
+  } else {
+    report.userDoc = 'User index helpers are unavailable in this mode.';
+  }
+
+  if (typeof state.dataApi.debugQueryHouseholdsByMember === 'function') {
+    const byMemberResult = await captureCall(() => {
+      return state.dataApi.debugQueryHouseholdsByMember(state.dataContext, userUid);
+    });
+    report.queryByMember = byMemberResult.ok
+      ? byMemberResult.value.map(summarizeHouseholdForDebug)
+      : byMemberResult.error;
+  } else {
+    report.queryByMember = 'debugQueryHouseholdsByMember is unavailable.';
+  }
+
+  if (typeof state.dataApi.debugQueryHouseholdsByOwner === 'function') {
+    const byOwnerResult = await captureCall(() => {
+      return state.dataApi.debugQueryHouseholdsByOwner(state.dataContext, userUid);
+    });
+    report.queryByOwner = byOwnerResult.ok
+      ? byOwnerResult.value.map(summarizeHouseholdForDebug)
+      : byOwnerResult.error;
+  } else {
+    report.queryByOwner = 'debugQueryHouseholdsByOwner is unavailable.';
+  }
+
+  if (typeof state.dataApi.listUserHouseholds === 'function') {
+    const listResult = await captureCall(() => {
+      return state.dataApi.listUserHouseholds(state.dataContext, userUid);
+    });
+    report.listUserHouseholds = listResult.ok
+      ? listResult.value.map(summarizeHouseholdForDebug)
+      : listResult.error;
+  } else {
+    report.listUserHouseholds = 'listUserHouseholds is unavailable.';
+  }
+
+  if (typeof state.dataApi.listHouseholdIdsForUser === 'function' && typeof state.dataApi.getHousehold === 'function') {
+    const indexedIdsResult = await captureCall(() => {
+      return state.dataApi.listHouseholdIdsForUser(state.dataContext, userUid);
+    });
+
+    if (indexedIdsResult.ok) {
+      report.indexedHouseholdReads = await Promise.all(
+        indexedIdsResult.value.slice(0, 20).map(async (householdId) => {
+          const getResult = await captureCall(() => {
+            return state.dataApi.getHousehold(state.dataContext, householdId);
+          });
+
+          return getResult.ok
+            ? {
+              householdId,
+              household: getResult.value ? summarizeHouseholdForDebug(getResult.value) : null,
+            }
+            : {
+              householdId,
+              error: getResult.error,
+            };
+        }),
+      );
+    } else {
+      report.indexedHouseholdReads = indexedIdsResult.error;
+    }
+  } else {
+    report.indexedHouseholdReads = 'Indexed household lookup helpers are unavailable.';
+  }
+
+  setHouseholdDebugOutput(report);
+}
+
+async function debugLoadHouseholdById(rawHouseholdId) {
+  if (!state.user || !state.dataApi || !state.dataContext) {
+    throw new Error('Load-by-id requires an authenticated remote session.');
+  }
+
+  if (typeof state.dataApi.getHousehold !== 'function') {
+    throw new Error('getHousehold API is unavailable in this mode.');
+  }
+
+  const householdId = String(rawHouseholdId || '').trim();
+  if (!householdId) {
+    throw new Error('Household id is required.');
+  }
+
+  const report = {
+    ranAt: new Date().toISOString(),
+    mode: state.mode,
+    userUid: state.user.uid,
+    householdId,
+  };
+
+  let household = null;
+  try {
+    household = await state.dataApi.getHousehold(state.dataContext, householdId);
+    report.getHousehold = {
+      ok: true,
+      exists: Boolean(household),
+      household: household ? summarizeHouseholdForDebug(household) : null,
+    };
+  } catch (error) {
+    report.getHousehold = {
+      ok: false,
+      error: serializeError(error),
+    };
+    setHouseholdDebugOutput(report);
+    throw error;
+  }
+
+  if (!household) {
+    setHouseholdDebugOutput(report);
+    return;
+  }
+
+  if (!householdVisibleToCurrentUser(household)) {
+    report.refreshHouseholds = {
+      ok: false,
+      reason: 'Current user is not owner/member in this household document.',
+    };
+    setHouseholdDebugOutput(report);
+    return;
+  }
+
+  try {
+    await refreshHouseholds(householdId);
+    report.refreshHouseholds = {
+      ok: true,
+      activeHouseholdId: state.activeHouseholdId,
+      loadedHouseholdIds: state.households.map((entry) => entry.id),
+    };
+  } catch (error) {
+    report.refreshHouseholds = {
+      ok: false,
+      error: serializeError(error),
+    };
+    setHouseholdDebugOutput(report);
+    throw error;
+  }
+
+  setHouseholdDebugOutput(report);
 }
 
 async function createHouseholdAndRefresh(rawHouseholdName) {
@@ -1627,6 +1955,31 @@ function bindEvents() {
     }
   });
 
+  elements.householdDebugRun.addEventListener('click', async () => {
+    clearError();
+    setStatus('Running household diagnostics...');
+
+    try {
+      await runHouseholdDiagnostics();
+      setStatus('Household diagnostics complete. See the debug panel for details.');
+    } catch (error) {
+      showError(withStepError('Household diagnostics failed', error));
+    }
+  });
+
+  elements.householdDebugLoadForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearError();
+    setStatus('Loading household by id...');
+
+    try {
+      await debugLoadHouseholdById(elements.householdDebugHouseholdId.value);
+      setStatus(`Loaded household ${elements.householdDebugHouseholdId.value.trim()}.`);
+    } catch (error) {
+      showError(withStepError('Debug household load failed', error));
+    }
+  });
+
   elements.tabButtons.forEach((button) => {
     button.addEventListener('click', () => {
       switchTab(button.dataset.tabTarget);
@@ -1873,6 +2226,75 @@ function bindEvents() {
 
   elements.addMealButton.addEventListener('click', () => {
     openMealModalForLibrary();
+  });
+
+  elements.importMealsButton.addEventListener('click', () => {
+    elements.importMealsJson.value = '';
+    elements.importMealsResults.classList.add('hidden');
+    elements.importMealsSummary.textContent = '';
+    elements.importMealsErrors.innerHTML = '';
+    elements.importMealsModal.classList.remove('hidden');
+  });
+
+  elements.importMealsModalClose.addEventListener('click', () => {
+    elements.importMealsModal.classList.add('hidden');
+  });
+
+  elements.importMealsModal.addEventListener('click', (event) => {
+    if (event.target === elements.importMealsModal) {
+      elements.importMealsModal.classList.add('hidden');
+    }
+  });
+
+  elements.importMealsSubmit.addEventListener('click', async () => {
+    clearError();
+    elements.importMealsResults.classList.add('hidden');
+    elements.importMealsSummary.textContent = '';
+    elements.importMealsErrors.innerHTML = '';
+
+    const raw = elements.importMealsJson.value.trim();
+    if (!raw) {
+      showError('Paste a JSON array of meals to import.');
+      return;
+    }
+
+    const parsed = parseBulkMealJson(raw);
+
+    if (parsed.errors.length > 0 && parsed.valid.length === 0) {
+      elements.importMealsResults.classList.remove('hidden');
+      elements.importMealsSummary.textContent = 'No valid meals found.';
+      parsed.errors.forEach((err) => {
+        const li = document.createElement('li');
+        const label = err.title ? `#${err.index + 1} "${err.title}"` : err.index >= 0 ? `#${err.index + 1}` : 'Parse error';
+        li.textContent = `${label}: ${err.message}`;
+        elements.importMealsErrors.appendChild(li);
+      });
+      return;
+    }
+
+    try {
+      elements.importMealsSubmit.disabled = true;
+      const result = await state.dataApi.bulkCreateMeals(state.dataContext, state.activeHouseholdId, parsed.valid, state.user);
+
+      elements.importMealsResults.classList.remove('hidden');
+      const allErrors = [...parsed.errors, ...result.errors];
+      elements.importMealsSummary.textContent = `Imported ${result.created} meal(s).` + (allErrors.length ? ` ${allErrors.length} error(s).` : '');
+
+      allErrors.forEach((err) => {
+        const li = document.createElement('li');
+        const label = err.title ? `"${err.title}"` : `#${err.index + 1}`;
+        li.textContent = `${label}: ${err.message}`;
+        elements.importMealsErrors.appendChild(li);
+      });
+
+      if (result.created > 0) {
+        setStatus(`Imported ${result.created} meal(s) to library.`);
+      }
+    } catch (error) {
+      showError(error);
+    } finally {
+      elements.importMealsSubmit.disabled = false;
+    }
   });
 
   elements.mealModalClose.addEventListener('click', () => {

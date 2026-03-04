@@ -7,6 +7,7 @@ import {
   normalizeMealDraft,
   normalizeWeekDayInput,
   normalizeStoreName,
+  parseBulkMealJson,
 } from '../public/app/utils/validators.mjs';
 
 test('normalizeHouseholdName trims and validates length', () => {
@@ -72,6 +73,94 @@ test('normalizeWeekDayInput normalizes optional meal plan values', () => {
 
   assert.throws(() => normalizeWeekDayInput({ mealTitle: 'x'.repeat(121), eaterUids: [], notes: '', ingredientPlan: [] }), /120/);
   assert.throws(() => normalizeWeekDayInput({ mealTitle: '', eaterUids: [], notes: '', ingredientPlan: [{ name: '' }] }), /needs a name/i);
+});
+
+test('parseBulkMealJson parses valid input with string ingredients', () => {
+  const json = JSON.stringify([
+    { title: 'Tacos', ingredients: ['tortillas', 'ground beef', 'cheese'] },
+    { title: 'Salad', description: 'Light lunch', tags: ['healthy', 'quick'] },
+  ]);
+
+  const result = parseBulkMealJson(json);
+  assert.strictEqual(result.valid.length, 2);
+  assert.strictEqual(result.errors.length, 0);
+  assert.strictEqual(result.valid[0].title, 'Tacos');
+  assert.strictEqual(result.valid[0].ingredients.length, 3);
+  assert.strictEqual(result.valid[0].ingredients[0].name, 'tortillas');
+  assert.strictEqual(result.valid[0].ingredients[0].usuallyNeedToBuy, true);
+  assert.strictEqual(result.valid[1].title, 'Salad');
+  assert.strictEqual(result.valid[1].description, 'Light lunch');
+  assert.deepStrictEqual(result.valid[1].tags, ['healthy', 'quick']);
+});
+
+test('parseBulkMealJson handles mixed string and object ingredients', () => {
+  const json = JSON.stringify([
+    {
+      title: 'Pasta',
+      ingredients: [
+        'spaghetti',
+        { name: 'pancetta', usuallyNeedToBuy: true },
+        { name: 'parmesan', usuallyNeedToBuy: false, defaultStoreId: 'store1' },
+      ],
+    },
+  ]);
+
+  const result = parseBulkMealJson(json);
+  assert.strictEqual(result.valid.length, 1);
+  assert.strictEqual(result.valid[0].ingredients[0].name, 'spaghetti');
+  assert.strictEqual(result.valid[0].ingredients[0].usuallyNeedToBuy, true);
+  assert.strictEqual(result.valid[0].ingredients[1].name, 'pancetta');
+  assert.strictEqual(result.valid[0].ingredients[1].usuallyNeedToBuy, true);
+  assert.strictEqual(result.valid[0].ingredients[2].name, 'parmesan');
+  assert.strictEqual(result.valid[0].ingredients[2].usuallyNeedToBuy, false);
+  assert.strictEqual(result.valid[0].ingredients[2].defaultStoreId, 'store1');
+});
+
+test('parseBulkMealJson handles comma-separated tags string', () => {
+  const json = JSON.stringify([{ title: 'Pizza', tags: 'italian, comfort' }]);
+  const result = parseBulkMealJson(json);
+  assert.strictEqual(result.valid.length, 1);
+  assert.deepStrictEqual(result.valid[0].tags, ['italian', 'comfort']);
+});
+
+test('parseBulkMealJson returns error for invalid JSON', () => {
+  const result = parseBulkMealJson('not json at all');
+  assert.strictEqual(result.valid.length, 0);
+  assert.strictEqual(result.errors.length, 1);
+  assert.ok(result.errors[0].message.includes('Invalid JSON'));
+});
+
+test('parseBulkMealJson returns error when input is not an array', () => {
+  const result = parseBulkMealJson('{"title":"Tacos"}');
+  assert.strictEqual(result.valid.length, 0);
+  assert.strictEqual(result.errors.length, 1);
+  assert.ok(result.errors[0].message.includes('array'));
+});
+
+test('parseBulkMealJson collects per-meal errors for missing titles', () => {
+  const json = JSON.stringify([
+    { title: 'Good Meal' },
+    { description: 'no title here' },
+    { title: '', ingredients: ['rice'] },
+  ]);
+
+  const result = parseBulkMealJson(json);
+  assert.strictEqual(result.valid.length, 1);
+  assert.strictEqual(result.valid[0].title, 'Good Meal');
+  assert.strictEqual(result.errors.length, 2);
+  assert.strictEqual(result.errors[0].index, 1);
+  assert.strictEqual(result.errors[1].index, 2);
+});
+
+test('parseBulkMealJson reports validation limit violations', () => {
+  const json = JSON.stringify([
+    { title: 'x'.repeat(121), ingredients: [] },
+  ]);
+
+  const result = parseBulkMealJson(json);
+  assert.strictEqual(result.valid.length, 0);
+  assert.strictEqual(result.errors.length, 1);
+  assert.ok(result.errors[0].message.includes('120'));
 });
 
 test('normalizeGroceryItemInput validates required fields and optional store/notes', () => {

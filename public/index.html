@@ -264,6 +264,19 @@
         margin: 0;
       }
 
+      #household-debug-output {
+        margin: 0;
+        background: #f7f0de;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 0.65rem;
+        max-height: 260px;
+        overflow: auto;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 0.8rem;
+      }
+
       .tab-nav button.active,
       .subtab-nav button.active {
         background: var(--ink);
@@ -564,6 +577,21 @@
               </form>
             </article>
           </div>
+
+          <details class="card stack">
+            <summary>Debug household loading</summary>
+            <div class="actions" style="margin-top: 0.5rem;">
+              <button id="household-debug-run" type="button" class="ghost">Run diagnostics</button>
+            </div>
+            <form id="household-debug-load-form" class="inline-form">
+              <label>
+                Household id
+                <input id="household-debug-household-id" type="text" placeholder="oDSdtLUxzcsYTDvcmLYs" />
+              </label>
+              <button type="submit" class="ghost">Load by id</button>
+            </form>
+            <pre id="household-debug-output" class="meta">Diagnostics not run yet.</pre>
+          </details>
         </section>
 
         <div id="main-app-content">
@@ -628,7 +656,10 @@
           <section id="meals-panel" role="tabpanel" class="hidden stack">
             <div class="panel-header">
               <h3>Meals we make</h3>
-              <button id="add-meal-button" type="button">Add meal</button>
+              <div class="actions">
+                <button id="import-meals-button" type="button" class="ghost">Import meals</button>
+                <button id="add-meal-button" type="button">Add meal</button>
+              </div>
             </div>
 
             <form id="meal-search-form" class="inline-form" autocomplete="off">
@@ -784,6 +815,29 @@
         </form>
 
         <ul id="stores-manage-list" class="panel-list"></ul>
+      </div>
+    </div>
+
+    <div id="import-meals-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="import-meals-modal-title">
+      <div class="modal-card stack">
+        <div class="modal-head">
+          <h2 id="import-meals-modal-title">Import meals</h2>
+          <button id="import-meals-modal-close" type="button" class="ghost">Close</button>
+        </div>
+
+        <p class="meta">Paste a JSON array of meals. Each meal needs at least a <code>title</code>. Ingredients can be strings or objects.</p>
+
+        <label>
+          JSON
+          <textarea id="import-meals-json" placeholder='[{"title":"Chicken Stir Fry","ingredients":["chicken","rice"]}]' style="min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.85rem;"></textarea>
+        </label>
+
+        <button id="import-meals-submit" type="button">Import</button>
+
+        <div id="import-meals-results" class="hidden">
+          <p id="import-meals-summary" class="meta"></p>
+          <ul id="import-meals-errors" class="panel-list"></ul>
+        </div>
       </div>
     </div>
 

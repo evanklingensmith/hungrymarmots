@@ -16,7 +16,7 @@ service cloud.firestore {
 
     function listedInHouseholdDoc(householdId) {
       return exists(householdPath(householdId))
-        && listedInHousehold(get(householdPath(householdId)).data);
+        && canAccessHousehold(get(householdPath(householdId)).data);
     }
 
     function isMember(householdId) {
@@ -27,7 +27,16 @@ service cloud.firestore {
     function listedInHousehold(data) {
       return signedIn()
         && data.memberUids is list
-        && data.memberUids.hasAny([request.auth.uid]);
+        && request.auth.uid in data.memberUids;
+    }
+
+    function ownedByUser(data) {
+      return signedIn()
+        && data.ownerUid == request.auth.uid;
+    }
+
+    function canAccessHousehold(data) {
+      return listedInHousehold(data) || ownedByUser(data);
     }
 
     function canSelfJoin(householdId) {
@@ -256,8 +265,7 @@ service cloud.firestore {
     }
 
     match /households/{householdId} {
-      allow get: if listedInHousehold(resource.data);
-      allow list: if listedInHousehold(resource.data);
+      allow read: if canAccessHousehold(resource.data);
       allow create: if signedIn() && validHouseholdCreate();
       allow update: if (isMember(householdId) && validHouseholdUpdate())
         || (canSelfJoin(householdId) && validHouseholdUpdate());

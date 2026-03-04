@@ -269,6 +269,49 @@ export function normalizePantryItemInput(input) {
   };
 }
 
+export function parseBulkMealJson(jsonString) {
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonString);
+  } catch (error) {
+    return { valid: [], errors: [{ index: -1, title: null, message: 'Invalid JSON: ' + error.message }] };
+  }
+
+  if (!Array.isArray(parsed)) {
+    return { valid: [], errors: [{ index: -1, title: null, message: 'Input must be a JSON array.' }] };
+  }
+
+  const valid = [];
+  const errors = [];
+
+  parsed.forEach((entry, index) => {
+    const rawTitle = typeof entry?.title === 'string' ? entry.title.trim() : '';
+
+    try {
+      const rawIngredients = Array.isArray(entry?.ingredients) ? entry.ingredients : [];
+      const normalizedIngredients = rawIngredients.map((ingredient) => {
+        if (typeof ingredient === 'string') {
+          return { name: ingredient, usuallyNeedToBuy: true };
+        }
+        return ingredient;
+      });
+
+      const draft = normalizeMealDraft({
+        title: entry?.title,
+        description: entry?.description,
+        tags: entry?.tags,
+        ingredients: normalizedIngredients,
+      });
+
+      valid.push(draft);
+    } catch (error) {
+      errors.push({ index, title: rawTitle || null, message: error.message });
+    }
+  });
+
+  return { valid, errors };
+}
+
 export function normalizeMealDay(value) {
   const day = asTrimmedString(value).toLowerCase();
 
