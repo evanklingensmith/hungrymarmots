@@ -16,6 +16,12 @@ jobs:
           BUILD_VERSION="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
           sed -i "s/__BUILD_VERSION__/${BUILD_VERSION}/g" public/index.html
       - run: npm ci && npm run build --if-present
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_HUNGRYMARMOTS }}
+      - name: Deploy Firestore rules
+        run: npx firebase-tools deploy --only firestore:rules --project hungrymarmots
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

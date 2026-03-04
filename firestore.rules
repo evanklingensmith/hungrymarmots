@@ -265,7 +265,7 @@ service cloud.firestore {
     }
 
     match /households/{householdId} {
-      allow read: if canAccessHousehold(resource.data);
+      allow read: if resource.data != null && canAccessHousehold(resource.data);
       allow create: if signedIn() && validHouseholdCreate();
       allow update: if (isMember(householdId) && validHouseholdUpdate())
         || (canSelfJoin(householdId) && validHouseholdUpdate());

@@ -299,12 +299,8 @@ export async function listUserHouseholds(db, uid) {
     console.warn('Failed ownerUid household lookup', ownerResult.reason);
   }
 
-  if (!docsById.size) {
-    throw memberResult.status === 'rejected'
-      ? memberResult.reason
-      : ownerResult.status === 'rejected'
-        ? ownerResult.reason
-        : new Error('Unable to load households.');
+  if (!docsById.size && memberResult.status === 'rejected' && ownerResult.status === 'rejected') {
+    throw memberResult.reason;
   }
 
   return Array.from(docsById.values())
