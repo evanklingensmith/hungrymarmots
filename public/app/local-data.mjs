@@ -900,6 +900,37 @@ export async function createMeal(context, householdId, input, user) {
   return id;
 }
 
+export async function updateMeal(context, householdId, mealId, input, user) {
+  ensureAccess(context, householdId, user.uid);
+  const meal = normalizeMealDraft(input);
+  ensureHouseholdContainers(context.state, householdId);
+
+  const existing = context.state.mealsByHousehold[householdId]?.[mealId];
+  if (!existing) {
+    throw new Error('Meal not found.');
+  }
+
+  context.state.mealsByHousehold[householdId][mealId] = {
+    ...existing,
+    title: meal.title,
+    description: meal.description,
+    tags: meal.tags,
+    ingredients: meal.ingredients.map((ingredient) => ({
+      id: ingredient.id || makeId('ingredient'),
+      name: ingredient.name,
+      usuallyNeedToBuy: ingredient.usuallyNeedToBuy,
+      defaultStoreId: ingredient.defaultStoreId,
+    })),
+    updatedAt: nowIso(),
+  };
+
+  addActivity(context.state, householdId, user, 'weekly', 'meal-update', `Updated meal ${meal.title}.`, null);
+
+  persist(context);
+  notifyListeners(context, 'meals', householdId);
+  notifyListeners(context, 'activity', householdId);
+}
+
 export async function bulkCreateMeals(context, householdId, meals, user) {
   const created = [];
   const errors = [];

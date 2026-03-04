@@ -751,6 +751,33 @@ export async function createMeal(db, householdId, input, user) {
   return doc.id;
 }
 
+export async function updateMeal(db, householdId, mealId, input, user) {
+  const meal = normalizeMealDraft(input);
+  const doc = mealCollection(db, householdId).doc(mealId);
+
+  const existing = await doc.get();
+  if (!existing.exists) {
+    throw new Error('Meal not found.');
+  }
+
+  await doc.set({
+    title: meal.title,
+    description: meal.description,
+    tags: meal.tags,
+    ingredients: meal.ingredients.map((ingredient) => ({
+      id: ingredient.id || mealCollection(db, householdId).doc().id,
+      name: ingredient.name,
+      usuallyNeedToBuy: ingredient.usuallyNeedToBuy,
+      defaultStoreId: ingredient.defaultStoreId,
+    })),
+    createdBy: existing.data().createdBy,
+    createdAt: existing.data().createdAt,
+    updatedAt: serverTimestamp(),
+  });
+
+  await addActivity(db, householdId, user, 'weekly', 'meal-update', `Updated meal ${meal.title}.`);
+}
+
 export async function bulkCreateMeals(db, householdId, meals, user) {
   const created = [];
   const errors = [];

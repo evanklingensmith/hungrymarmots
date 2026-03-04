@@ -110,6 +110,7 @@ function cacheElements() {
   elements.mealSearchTag = document.getElementById('meal-search-tag');
   elements.mealSearchIngredient = document.getElementById('meal-search-ingredient');
   elements.mealSearchReset = document.getElementById('meal-search-reset');
+  elements.mealTagCloud = document.getElementById('meal-tag-cloud');
 
   elements.pantryWeeklyList = document.getElementById('pantry-weekly-list');
   elements.pantryOtherList = document.getElementById('pantry-other-list');
@@ -143,6 +144,8 @@ function cacheElements() {
   elements.newMealTags = document.getElementById('new-meal-tags');
   elements.newMealIngredients = document.getElementById('new-meal-ingredients');
   elements.addNewMealIngredient = document.getElementById('add-new-meal-ingredient');
+  elements.saveMealToLibrary = document.getElementById('save-meal-to-library');
+  elements.saveMealToLibraryLabel = document.getElementById('save-meal-to-library-label');
 
   elements.storesModal = document.getElementById('stores-modal');
   elements.storesModalClose = document.getElementById('stores-modal-close');
@@ -394,6 +397,13 @@ function closeStoresModal() {
   elements.storesModal.classList.add('hidden');
 }
 
+function setMealModalSubmitText(text) {
+  const button = elements.mealModalForm.querySelector('button[type="submit"]');
+  if (button) {
+    button.textContent = text;
+  }
+}
+
 function openMealModalForDay(dayId) {
   if (!state.mode || !inAppView()) {
     return;
@@ -421,6 +431,9 @@ function openMealModalForDay(dayId) {
     elements.newMealTitle.value = day.mealTitle;
   }
 
+  elements.saveMealToLibrary.checked = true;
+  elements.saveMealToLibraryLabel.classList.remove('hidden');
+  setMealModalSubmitText('Apply to this day');
   elements.mealModal.classList.remove('hidden');
 }
 
@@ -445,6 +458,56 @@ function openMealModalForLibrary() {
   resetNewMealFields();
   elements.newMealDetails.open = true;
 
+  elements.saveMealToLibraryLabel.classList.add('hidden');
+  setMealModalSubmitText('Add to library');
+  elements.mealModal.classList.remove('hidden');
+}
+
+function openMealModalForEdit(mealId) {
+  if (!state.mode || !inAppView()) {
+    return;
+  }
+
+  const meal = state.meals.find((entry) => entry.id === mealId);
+  if (!meal) {
+    return;
+  }
+
+  state.mealModal = {
+    open: true,
+    mode: 'edit',
+    dayId: null,
+    editMealId: mealId,
+  };
+
+  elements.mealDayIdInput.value = '';
+  elements.mealModalTitle.textContent = `Edit ${meal.title}`;
+  elements.mealExistingSelect.disabled = true;
+  elements.mealExistingSelect.parentElement.classList.add('hidden');
+  elements.mealExistingConfig.classList.add('hidden');
+
+  renderMealExistingOptions('__new__');
+
+  elements.newMealTitle.value = meal.title || '';
+  elements.newMealDescription.value = meal.description || '';
+  elements.newMealTags.value = Array.isArray(meal.tags) ? meal.tags.join(', ') : '';
+  elements.newMealIngredients.innerHTML = '';
+
+  const ingredients = Array.isArray(meal.ingredients) ? meal.ingredients : [];
+  if (ingredients.length) {
+    ingredients.forEach((ingredient) => addNewMealIngredientRow(ingredient));
+  } else {
+    addNewMealIngredientRow();
+  }
+
+  elements.newMealDetails.open = true;
+  const summary = elements.newMealDetails.querySelector('summary');
+  if (summary) {
+    summary.classList.add('hidden');
+  }
+
+  elements.saveMealToLibraryLabel.classList.add('hidden');
+  setMealModalSubmitText('Save changes');
   elements.mealModal.classList.remove('hidden');
 }
 
@@ -454,6 +517,11 @@ function closeMealModal() {
     mode: 'day',
     dayId: null,
   };
+
+  const summary = elements.newMealDetails.querySelector('summary');
+  if (summary) {
+    summary.classList.remove('hidden');
+  }
 
   elements.mealModal.classList.add('hidden');
 }
@@ -567,11 +635,11 @@ function cookOptions(selectedUid) {
   return options.join('');
 }
 
-function eaterOptions(selectedUids = []) {
+function eaterChips(selectedUids = []) {
   return state.members
     .map((member) => {
-      const selected = selectedUids.includes(member.uid) ? 'selected' : '';
-      return `<option value="${member.uid}" ${selected}>${escapeHtml(member.displayName)}</option>`;
+      const active = selectedUids.includes(member.uid);
+      return `<button type="button" class="eater-chip${active ? ' active' : ''}" data-uid="${member.uid}">${escapeHtml(member.displayName)}</button>`;
     })
     .join('');
 }
@@ -583,18 +651,21 @@ function renderWeeklyGrid() {
     .map((day) => {
       const value = state.weekPlan[day.dayId] || {};
       const mealTitle = value.mealTitle || 'No meal selected';
+      const isForage = String(value.mealTitle || '').toLowerCase() === 'forage';
       const eaterList = Array.isArray(value.eaterUids) ? value.eaterUids : [];
 
       return `
-        <form class="planner-day" data-day-id="${day.dayId}">
+        <form class="planner-day${isForage ? ' forage-day' : ''}" data-day-id="${day.dayId}">
           <h4>${escapeHtml(day.label)}</h4>
 
           <div class="meal-picker">
             <div>
               <div class="title">${escapeHtml(mealTitle)}</div>
-              <div class="meta">${value.mealId ? `Meal id: ${escapeHtml(value.mealId)}` : 'No linked meal'}</div>
             </div>
-            <button type="button" class="ghost meal-open" data-day-id="${day.dayId}">Set meal</button>
+            <div class="actions">
+              <button type="button" class="ghost forage-btn" data-day-id="${day.dayId}">${isForage ? 'Unforage' : 'Forage'}</button>
+              <button type="button" class="ghost meal-open" data-day-id="${day.dayId}">Set meal</button>
+            </div>
           </div>
 
           <label>
@@ -604,12 +675,12 @@ function renderWeeklyGrid() {
             </select>
           </label>
 
-          <label>
-            Who is eating
-            <select name="eaterUids" multiple>
-              ${eaterOptions(eaterList)}
-            </select>
-          </label>
+          <div class="eater-section">
+            <span class="eater-label">Who is eating</span>
+            <div class="eater-chips">
+              ${eaterChips(eaterList)}
+            </div>
+          </div>
 
           <label>
             Notes
@@ -766,6 +837,31 @@ function filteredMeals() {
   });
 }
 
+function renderMealTagCloud() {
+  const tagCounts = new Map();
+  state.meals.forEach((meal) => {
+    (Array.isArray(meal.tags) ? meal.tags : []).forEach((tag) => {
+      const key = String(tag).toLowerCase();
+      if (!key) {
+        return;
+      }
+
+      tagCounts.set(key, (tagCounts.get(key) || 0) + 1);
+    });
+  });
+
+  const activeTag = state.mealSearch.tag.trim().toLowerCase();
+
+  const sorted = Array.from(tagCounts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+  elements.mealTagCloud.innerHTML = sorted
+    .map(([tag, count]) => {
+      const isActive = activeTag === tag;
+      return `<button type="button" class="tag-filter${isActive ? ' active' : ''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)} <span class="meta">(${count})</span></button>`;
+    })
+    .join('');
+}
+
 function renderMealsList() {
   const meals = filteredMeals();
 
@@ -784,6 +880,7 @@ function renderMealsList() {
           <div class="item-row">
             <strong class="title">${escapeHtml(meal.title || 'Untitled meal')}</strong>
             <span class="meta">${ingredients.length} ingredient${ingredients.length === 1 ? '' : 's'}</span>
+            <button type="button" class="ghost edit-meal-button" data-meal-id="${meal.id}">Edit</button>
           </div>
           ${meal.description ? `<p>${escapeHtml(meal.description)}</p>` : ''}
           ${tags.length ? `<div class="meal-tags">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
@@ -1005,12 +1102,6 @@ function addNewMealIngredientRow(seed = null) {
   elements.newMealIngredients.appendChild(row);
 }
 
-function selectedEaterUids(selectElement) {
-  return Array.from(selectElement.selectedOptions || [])
-    .map((option) => option.value)
-    .filter(Boolean);
-}
-
 function dayFormValues(dayId) {
   const form = elements.weeklyGrid.querySelector(`.planner-day[data-day-id="${dayId}"]`);
 
@@ -1024,7 +1115,9 @@ function dayFormValues(dayId) {
   }
 
   const cookUid = form.elements.cookUid.value || null;
-  const eaterUids = selectedEaterUids(form.elements.eaterUids);
+  const eaterUids = Array.from(form.querySelectorAll('.eater-chip.active'))
+    .map((button) => button.dataset.uid)
+    .filter(Boolean);
   const notes = form.elements.notes.value || '';
 
   return {
@@ -1341,6 +1434,7 @@ function subscribeToHouseholdData() {
       householdId,
       (meals) => {
         state.meals = meals;
+        renderMealTagCloud();
         renderMealsList();
         if (state.mealModal.open) {
           renderMealExistingOptions(elements.mealExistingSelect.value || '__new__');
@@ -1819,6 +1913,7 @@ function renderMainData() {
   renderGroceryStoreGrid();
   renderWeeklyPantrySnippet();
   renderGroceryHistory();
+  renderMealTagCloud();
   renderMealsList();
   renderPantryLists();
   renderPantryHistory();
@@ -2019,6 +2114,31 @@ function bindEvents() {
   });
 
   elements.weeklyGrid.addEventListener('click', async (event) => {
+    const eaterChip = event.target.closest('.eater-chip');
+    if (eaterChip) {
+      eaterChip.classList.toggle('active');
+      return;
+    }
+
+    const forageButton = event.target.closest('.forage-btn');
+    if (forageButton) {
+      clearError();
+      try {
+        const dayId = forageButton.dataset.dayId;
+        const current = state.weekPlan[dayId] || {};
+        const isForage = String(current.mealTitle || '').toLowerCase() === 'forage';
+        await saveDayPlan(dayId, {
+          mealId: null,
+          mealTitle: isForage ? null : 'Forage',
+          ingredientPlan: [],
+        });
+        setStatus(isForage ? `Cleared forage for ${dayId}.` : `${dayId}: Forage!`);
+      } catch (error) {
+        showError(error);
+      }
+      return;
+    }
+
     const mealButton = event.target.closest('.meal-open');
     if (mealButton) {
       openMealModalForDay(mealButton.dataset.dayId);
@@ -2210,6 +2330,7 @@ function bindEvents() {
     state.mealSearch.text = elements.mealSearchText.value;
     state.mealSearch.tag = elements.mealSearchTag.value;
     state.mealSearch.ingredient = elements.mealSearchIngredient.value;
+    renderMealTagCloud();
     renderMealsList();
   };
 
@@ -2224,8 +2345,35 @@ function bindEvents() {
     onMealSearchInput();
   });
 
+  elements.mealTagCloud.addEventListener('click', (event) => {
+    const button = event.target.closest('.tag-filter');
+    if (!button) {
+      return;
+    }
+
+    const tag = button.dataset.tag;
+    const current = state.mealSearch.tag.trim().toLowerCase();
+
+    if (current === tag) {
+      elements.mealSearchTag.value = '';
+    } else {
+      elements.mealSearchTag.value = tag;
+    }
+
+    onMealSearchInput();
+  });
+
   elements.addMealButton.addEventListener('click', () => {
     openMealModalForLibrary();
+  });
+
+  elements.mealsList.addEventListener('click', (event) => {
+    const button = event.target.closest('.edit-meal-button');
+    if (!button) {
+      return;
+    }
+
+    openMealModalForEdit(button.dataset.mealId);
   });
 
   elements.importMealsButton.addEventListener('click', () => {
@@ -2338,6 +2486,14 @@ function bindEvents() {
     clearError();
 
     try {
+      if (state.mealModal.mode === 'edit') {
+        const draft = parseNewMealDraftFromModal();
+        await state.dataApi.updateMeal(state.dataContext, state.activeHouseholdId, state.mealModal.editMealId, draft, state.user);
+        closeMealModal();
+        setStatus(`Updated ${draft.title.trim() || 'meal'}.`);
+        return;
+      }
+
       if (state.mealModal.mode === 'library') {
         const draft = parseNewMealDraftFromModal();
         await state.dataApi.createMeal(state.dataContext, state.activeHouseholdId, draft, state.user);
@@ -2372,21 +2528,34 @@ function bindEvents() {
       }
 
       const draft = parseNewMealDraftFromModal();
-      const createdMealId = await state.dataApi.createMeal(state.dataContext, state.activeHouseholdId, draft, state.user);
-      const createdMeal = {
-        id: createdMealId,
-        title: draft.title.trim(),
-        ingredients: draft.ingredients,
-      };
+      const saveToLibrary = elements.saveMealToLibrary.checked;
 
-      await saveDayPlan(dayId, {
-        mealId: createdMealId,
-        mealTitle: createdMeal.title,
-        ingredientPlan: parseIngredientPlanForNewMeal(createdMeal),
-      });
+      if (saveToLibrary) {
+        const createdMealId = await state.dataApi.createMeal(state.dataContext, state.activeHouseholdId, draft, state.user);
+        const createdMeal = {
+          id: createdMealId,
+          title: draft.title.trim(),
+          ingredients: draft.ingredients,
+        };
 
-      closeMealModal();
-      setStatus(`Created and applied ${createdMeal.title} to ${dayId}.`);
+        await saveDayPlan(dayId, {
+          mealId: createdMealId,
+          mealTitle: createdMeal.title,
+          ingredientPlan: parseIngredientPlanForNewMeal(createdMeal),
+        });
+
+        closeMealModal();
+        setStatus(`Created and applied ${createdMeal.title} to ${dayId}.`);
+      } else {
+        await saveDayPlan(dayId, {
+          mealId: null,
+          mealTitle: draft.title.trim() || null,
+          ingredientPlan: [],
+        });
+
+        closeMealModal();
+        setStatus(`Applied ${draft.title.trim() || 'meal'} to ${dayId}.`);
+      }
     } catch (error) {
       showError(error);
     }
