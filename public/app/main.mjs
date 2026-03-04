@@ -28,6 +28,7 @@ const state = {
   activeTab: 'weekly',
   groceryView: 'list',
   pantryView: 'list',
+  mealsView: 'expanded',
   mealSearch: {
     text: '',
     tag: '',
@@ -111,6 +112,8 @@ function cacheElements() {
   elements.mealSearchIngredient = document.getElementById('meal-search-ingredient');
   elements.mealSearchReset = document.getElementById('meal-search-reset');
   elements.mealTagCloud = document.getElementById('meal-tag-cloud');
+  elements.mealsViewExpanded = document.getElementById('meals-view-expanded');
+  elements.mealsViewTitles = document.getElementById('meals-view-titles');
 
   elements.pantryWeeklyList = document.getElementById('pantry-weekly-list');
   elements.pantryOtherList = document.getElementById('pantry-other-list');
@@ -652,10 +655,11 @@ function renderWeeklyGrid() {
       const value = state.weekPlan[day.dayId] || {};
       const mealTitle = value.mealTitle || 'No meal selected';
       const isForage = String(value.mealTitle || '').toLowerCase() === 'forage';
+      const hasMeal = Boolean(value.mealTitle) && !isForage;
       const eaterList = Array.isArray(value.eaterUids) ? value.eaterUids : [];
 
       return `
-        <form class="planner-day${isForage ? ' forage-day' : ''}" data-day-id="${day.dayId}">
+        <form class="planner-day${isForage ? ' forage-day' : hasMeal ? ' has-meal' : ''}" data-day-id="${day.dayId}">
           <h4>${escapeHtml(day.label)}</h4>
 
           <div class="meal-picker">
@@ -870,10 +874,24 @@ function renderMealsList() {
     return;
   }
 
+  const compact = state.mealsView === 'titles';
+
   elements.mealsList.innerHTML = meals
     .map((meal) => {
       const tags = Array.isArray(meal.tags) ? meal.tags : [];
       const ingredients = Array.isArray(meal.ingredients) ? meal.ingredients : [];
+
+      if (compact) {
+        return `
+          <article class="meal-item compact">
+            <div class="item-row">
+              <strong class="title">${escapeHtml(meal.title || 'Untitled meal')}</strong>
+              ${tags.length ? `<span class="meta">${tags.map((tag) => escapeHtml(tag)).join(', ')}</span>` : ''}
+              <button type="button" class="ghost edit-meal-button" data-meal-id="${meal.id}">Edit</button>
+            </div>
+          </article>
+        `;
+      }
 
       return `
         <article class="meal-item">
@@ -2363,6 +2381,24 @@ function bindEvents() {
     onMealSearchInput();
   });
 
+  elements.mealsViewExpanded.addEventListener('click', () => {
+    state.mealsView = 'expanded';
+    elements.mealsViewExpanded.classList.add('active');
+    elements.mealsViewExpanded.classList.remove('ghost');
+    elements.mealsViewTitles.classList.remove('active');
+    elements.mealsViewTitles.classList.add('ghost');
+    renderMealsList();
+  });
+
+  elements.mealsViewTitles.addEventListener('click', () => {
+    state.mealsView = 'titles';
+    elements.mealsViewTitles.classList.add('active');
+    elements.mealsViewTitles.classList.remove('ghost');
+    elements.mealsViewExpanded.classList.remove('active');
+    elements.mealsViewExpanded.classList.add('ghost');
+    renderMealsList();
+  });
+
   elements.addMealButton.addEventListener('click', () => {
     openMealModalForLibrary();
   });
@@ -2531,21 +2567,35 @@ function bindEvents() {
       const saveToLibrary = elements.saveMealToLibrary.checked;
 
       if (saveToLibrary) {
-        const createdMealId = await state.dataApi.createMeal(state.dataContext, state.activeHouseholdId, draft, state.user);
-        const createdMeal = {
-          id: createdMealId,
-          title: draft.title.trim(),
-          ingredients: draft.ingredients,
-        };
+        const trimmedTitle = draft.title.trim().toLowerCase();
+        const existingMeal = trimmedTitle
+          ? state.meals.find((m) => m.title.trim().toLowerCase() === trimmedTitle)
+          : null;
+
+        let mealId;
+        let mealTitle;
+        let mealForPlan;
+
+        if (existingMeal) {
+          mealId = existingMeal.id;
+          mealTitle = existingMeal.title;
+          mealForPlan = existingMeal;
+        } else {
+          mealId = await state.dataApi.createMeal(state.dataContext, state.activeHouseholdId, draft, state.user);
+          mealTitle = draft.title.trim();
+          mealForPlan = { id: mealId, title: mealTitle, ingredients: draft.ingredients };
+        }
 
         await saveDayPlan(dayId, {
-          mealId: createdMealId,
-          mealTitle: createdMeal.title,
-          ingredientPlan: parseIngredientPlanForNewMeal(createdMeal),
+          mealId,
+          mealTitle,
+          ingredientPlan: parseIngredientPlanForNewMeal(mealForPlan),
         });
 
         closeMealModal();
-        setStatus(`Created and applied ${createdMeal.title} to ${dayId}.`);
+        setStatus(existingMeal
+          ? `Applied existing ${mealTitle} to ${dayId}.`
+          : `Created and applied ${mealTitle} to ${dayId}.`);
       } else {
         await saveDayPlan(dayId, {
           mealId: null,

@@ -322,6 +322,20 @@
         margin: 0;
       }
 
+      .has-meal {
+        background: rgba(59, 130, 246, 0.06);
+        border-color: rgba(59, 130, 246, 0.3);
+      }
+
+      .has-meal .meal-picker {
+        background: rgba(255, 255, 255, 0.7);
+        border-color: rgba(59, 130, 246, 0.25);
+      }
+
+      .has-meal .meal-picker .title {
+        color: #2563eb;
+      }
+
       .forage-day {
         background:
           repeating-linear-gradient(
@@ -431,6 +445,11 @@
         background: #fff;
         padding: 0.55rem;
         margin-bottom: 0.5rem;
+      }
+
+      .meal-item.compact {
+        padding: 0.35rem 0.55rem;
+        margin-bottom: 0.25rem;
       }
 
       .grocery-item:last-child,
@@ -764,6 +783,11 @@
               <button id="meal-search-reset" type="button" class="ghost">Reset</button>
             </form>
 
+            <div class="subtab-nav" role="tablist" aria-label="Meal views">
+              <button id="meals-view-expanded" type="button" class="active">Expanded</button>
+              <button id="meals-view-titles" type="button" class="ghost">Titles</button>
+            </div>
+
             <div id="meal-tag-cloud" class="meal-tags"></div>
 
             <div id="meals-list" class="stack"></div>
@@ -937,17 +961,8 @@
     <script defer src="/__/firebase/12.9.0/firebase-auth-compat.js"></script>
     <script defer src="/__/firebase/12.9.0/firebase-firestore-compat.js"></script>
     <script defer src="/__/firebase/init.js"></script>
-    <script>
-      // Fallback for non-Hosting environments.
-      window.firebaseConfig = window.firebaseConfig || {
-        apiKey: "AIzaSyAwz-PJRBfAa1yyVosCXCRi-Vz0ll9o9BQ",
-        authDomain: "hungrymarmots.firebaseapp.com",
-        projectId: "hungrymarmots",
-        storageBucket: "hungrymarmots.firebasestorage.app",
-        messagingSenderId: "81731552729",
-        appId: "1:81731552729:web:3240811c6fa16f511a05c8"
-      };
-    </script>
+    <!-- Firebase config is provided by /__/firebase/init.js on Firebase Hosting and emulators. -->
+    <!-- For other environments, set window.firebaseConfig before this point. -->
     <script type="module" src="/app/main.mjs?v=__BUILD_VERSION__"></script>
   </body>
 </html>
