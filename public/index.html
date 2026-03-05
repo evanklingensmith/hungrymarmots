@@ -961,8 +961,10 @@
     <script defer src="/__/firebase/12.9.0/firebase-auth-compat.js"></script>
     <script defer src="/__/firebase/12.9.0/firebase-firestore-compat.js"></script>
     <script defer src="/__/firebase/init.js"></script>
-    <!-- Firebase config is provided by /__/firebase/init.js on Firebase Hosting and emulators. -->
-    <!-- For other environments, set window.firebaseConfig before this point. -->
+    <script>
+      // Fallback injected at build time; /__/firebase/init.js takes precedence when available.
+      window.firebaseConfig = window.firebaseConfig || __FIREBASE_CONFIG__;
+    </script>
     <script type="module" src="/app/main.mjs?v=__BUILD_VERSION__"></script>
   </body>
 </html>
