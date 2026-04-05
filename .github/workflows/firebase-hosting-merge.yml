@@ -17,16 +17,28 @@ jobs:
           BUILD_VERSION="$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
           sed -i "s/__BUILD_VERSION__/${BUILD_VERSION}/g" public/index.html
       - name: Inject Firebase config (main site)
+        env:
+          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CONFIG_JSON }}
         run: |
-          sed -i "s|__FIREBASE_CONFIG__|${{ secrets.FIREBASE_CONFIG_JSON }}|g" public/index.html
+          node -e "
+            const fs = require('fs');
+            const f = 'public/index.html';
+            fs.writeFileSync(f, fs.readFileSync(f,'utf8').replace('__FIREBASE_CONFIG__', process.env.FIREBASE_CONFIG));
+          "
       - name: Build bike frontend
+        env:
+          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CONFIG_JSON }}
         run: |
           cd bike
           rm -rf public-dist && mkdir -p public-dist
           cp frontend/index.html frontend/app.js frontend/style.css public-dist/
           cp frontend/firestore.js frontend/auth.js public-dist/
           sed -i 's/BIKEPLANNER_MODE_PLACEHOLDER/hosted/' public-dist/index.html
-          sed -i "s|__FIREBASE_CONFIG__|${{ secrets.FIREBASE_CONFIG_JSON }}|g" public-dist/index.html
+          node -e "
+            const fs = require('fs');
+            const f = 'public-dist/index.html';
+            fs.writeFileSync(f, fs.readFileSync(f,'utf8').replace('__FIREBASE_CONFIG__', process.env.FIREBASE_CONFIG));
+          "
       - run: npm ci && npm run build --if-present
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
