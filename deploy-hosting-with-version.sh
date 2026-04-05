@@ -38,6 +38,23 @@ fi
 sed -i.bak "s/__BUILD_VERSION__/${BUILD_VERSION}/g" "${TARGET_HTML}"
 rm -f "${TARGET_HTML}.bak"
 
+# Build bike frontend (hosted mode)
+BIKE_DIR="${TMP_DIR}/bike"
+if [[ -d "${BIKE_DIR}/frontend" ]]; then
+  echo "Building bike frontend..."
+  rm -rf "${BIKE_DIR}/public-dist" && mkdir -p "${BIKE_DIR}/public-dist"
+  cp "${BIKE_DIR}/frontend/index.html" "${BIKE_DIR}/public-dist/"
+  cp "${BIKE_DIR}/frontend/app.js" "${BIKE_DIR}/public-dist/"
+  cp "${BIKE_DIR}/frontend/style.css" "${BIKE_DIR}/public-dist/"
+  cp "${BIKE_DIR}/frontend/firestore.js" "${BIKE_DIR}/public-dist/"
+  cp "${BIKE_DIR}/frontend/auth.js" "${BIKE_DIR}/public-dist/"
+  sed -i.bak 's/BIKEPLANNER_MODE_PLACEHOLDER/hosted/' "${BIKE_DIR}/public-dist/index.html"
+  rm -f "${BIKE_DIR}/public-dist/index.html.bak"
+  # __FIREBASE_CONFIG__ left as-is — /__/firebase/init.js handles it on Firebase Hosting
+  sed -i.bak 's|__FIREBASE_CONFIG__|null|g' "${BIKE_DIR}/public-dist/index.html"
+  rm -f "${BIKE_DIR}/public-dist/index.html.bak"
+fi
+
 (
   cd "${TMP_DIR}"
   firebase deploy --only hosting "$@"

@@ -343,5 +343,40 @@ service cloud.firestore {
         allow delete: if false;
       }
     }
+
+    // --- Bikeplanner collections ---
+
+    function hasBikeAccess() {
+      return signedIn() && request.auth.token.bikeAccess == true;
+    }
+
+    function hasTripAccess(tripId) {
+      return signedIn()
+        && (request.auth.token.bikeAccess == true
+            || (request.auth.token.tripAccess is list
+                && tripId in request.auth.token.tripAccess));
+    }
+
+    match /bike_trips/{tripId} {
+      allow read, write: if hasTripAccess(tripId);
+
+      match /{sub=**} {
+        allow read, write: if hasTripAccess(tripId);
+      }
+    }
+
+    match /bike_pois/{doc} {
+      allow read: if hasBikeAccess();
+      allow write: if false;
+    }
+
+    match /bike_overnight_stops/{doc} {
+      allow read: if hasBikeAccess();
+      allow write: if false;
+    }
+
+    match /bike_config/{doc} {
+      allow read, write: if false;
+    }
   }
 }
