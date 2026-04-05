@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bikeplanner</title>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+    <script>
+        // Mode config — replaced by build.sh for hosted deployment
+        // build.sh replaces 'hosted' with 'hosted'
+        window.BIKEPLANNER_CONFIG = { mode: 'BIKEPLANNER_MODE_PLACEHOLDER' };
+        if (window.BIKEPLANNER_CONFIG.mode.indexOf('PLACEHOLDER') !== -1) {
+            window.BIKEPLANNER_CONFIG.mode = 'local';
+        }
+    </script>
+    <script>
+        (function() {
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = window.BIKEPLANNER_CONFIG.mode === 'hosted' ? '/style.css' : '/static/style.css';
+            document.head.appendChild(link);
+        })();
+    </script>
+</head>
+<body>
+    <div id="app">
+        <div id="sidebar">
+            <div id="header">
+                <h1>Bikeplanner</h1>
+                <div style="display:flex;gap:4px;align-items:center;">
+                    <button id="trip-list-btn" class="icon-btn" title="Trips">&#128193;</button>
+                <div id="settings-wrap">
+                    <button id="settings-btn" class="icon-btn" title="Settings">&#9881;</button>
+                    <div id="settings-popover">
+                        <div class="popover-row">
+                            <span class="popover-label">Units</span>
+                            <div class="toggle-group">
+                                <button id="unit-km" class="toggle-btn active">km / m</button>
+                                <button id="unit-mi" class="toggle-btn">mi / ft</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </div>
+
+            <div id="trip-bar">
+                <span id="trip-name" title="Click to rename">No trip loaded</span>
+            </div>
+            <div id="trip-panel" style="display:none;">
+                <div class="trip-panel-actions">
+                    <button id="new-trip-btn">+ New Trip</button>
+                    <button id="clear-all-trips-btn">Delete All</button>
+                </div>
+                <div id="trip-list"></div>
+            </div>
+
+            <div class="panel" id="controls">
+                <h2>Route</h2>
+                <p class="hint" id="click-hint">Click the map to set start and end points, or enter coordinates.</p>
+
+                <div class="field">
+                    <label>Start</label>
+                    <input type="text" id="start-input" placeholder="Click map or enter lat, lon">
+                </div>
+                <div class="field">
+                    <label>End</label>
+                    <input type="text" id="end-input" placeholder="Click map or enter lat, lon">
+                </div>
+
+                <div id="via-points-section" style="display:none;">
+                    <label>Via-points <span id="via-count">(0)</span></label>
+                    <div id="via-list"></div>
+                </div>
+
+                <div class="field-row">
+                    <div class="field">
+                        <label>Daily distance (<span id="distance-unit-label">km</span>)</label>
+                        <input type="number" id="daily-distance" value="80" min="20" max="200">
+                    </div>
+                    <div class="field">
+                        <label>Max elevation/day (<span id="elevation-unit-label">m</span>)</label>
+                        <input type="number" id="max-elevation" value="1500" min="100" max="5000">
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Surface</label>
+                    <select id="surface-pref">
+                        <option value="trekking">Any (trekking)</option>
+                        <option value="fastbike">Paved preferred</option>
+                        <option value="MTB">Off-road / MTB</option>
+                    </select>
+                </div>
+
+                <button id="route-btn" disabled>Calculate Route</button>
+                <button id="load-gpx-route-btn" type="button">Load GPX as Route</button>
+                <input type="file" id="gpx-route-input" accept=".gpx" style="display:none;">
+                <button id="clear-btn">Clear</button>
+
+                <div id="gpx-overlay-section" style="display:none; margin-top: 12px;">
+                    <label>GPX Overlays</label>
+                    <button id="import-gpx-btn" type="button">Import GPX</button>
+                    <input type="file" id="gpx-file-input" accept=".gpx" style="display:none;">
+                    <div id="gpx-overlay-list"></div>
+                </div>
+            </div>
+
+            <div class="panel" id="route-info" style="display:none;">
+                <h2>Route Info</h2>
+                <div id="route-stats"></div>
+                <div id="elevation-chart-container">
+                    <canvas id="elevation-chart"></canvas>
+                </div>
+                <button id="export-gpx-btn">Export GPX</button>
+                <button id="reverse-route-btn">Reverse Route</button>
+                <button id="share-trip-btn" style="display:none;">Share Trip</button>
+                <div id="share-trip-panel" style="display:none;margin-top:8px;">
+                    <div class="field">
+                        <label>Share password</label>
+                        <input type="text" id="share-password-input" placeholder="Set a password for sharing">
+                    </div>
+                    <button id="share-save-btn">Save &amp; Copy Link</button>
+                    <div id="share-link-display" style="display:none;margin-top:6px;font-size:12px;word-break:break-all;"></div>
+                </div>
+            </div>
+
+            <div class="panel" id="itinerary-panel" style="display:none;">
+                <h2>Itinerary</h2>
+                <div class="field-row">
+                    <div class="field">
+                        <label>Number of days</label>
+                        <input type="number" id="num-days" value="" min="1" max="100" placeholder="Auto">
+                    </div>
+                    <div class="field">
+                        <label>Avg speed (<span id="speed-unit-label">km/h</span>)</label>
+                        <input type="number" id="avg-speed" value="15" min="5" max="50" step="0.5">
+                    </div>
+                    <div class="field">
+                        <label>Max hours/day</label>
+                        <input type="number" id="max-hours" value="0" min="0" max="16" step="0.5" placeholder="No limit">
+                    </div>
+                </div>
+                <button id="generate-itinerary-btn">Generate Itinerary</button>
+                <div id="itinerary-summary"></div>
+                <div id="gradient-legend" style="display:none;">
+                    <span class="legend-item"><span class="legend-swatch" style="background:#f5c542;"></span>2-5%</span>
+                    <span class="legend-item"><span class="legend-swatch" style="background:#f59e42;"></span>5-8%</span>
+                    <span class="legend-item"><span class="legend-swatch" style="background:#e83e3e;"></span>&gt;8%</span>
+                </div>
+                <div id="day-split-timeline"></div>
+                <div id="itinerary-days"></div>
+            </div>
+
+            <div class="panel" id="poi-panel" style="display:none;">
+                <h2>Nearby</h2>
+                <div id="poi-list"></div>
+            </div>
+
+            <div class="panel" id="overnight-filter-panel" style="display:none;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <h2>Accommodation</h2>
+                    <label class="toggle-label"><input type="checkbox" id="hide-overnight-toggle"> Hide all</label>
+                </div>
+                <div class="field">
+                    <label>Type</label>
+                    <div id="overnight-type-filters" class="filter-chips"></div>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="bike-friendly-filter"> Bike-friendly only</label>
+                </div>
+                <div class="field">
+                    <label>Max price band</label>
+                    <select id="price-band-filter">
+                        <option value="">Any</option>
+                        <option value="0">Budget</option>
+                        <option value="1">Moderate</option>
+                        <option value="2">Mid-range</option>
+                        <option value="3">Premium</option>
+                    </select>
+                </div>
+                <div id="overnight-count" class="hint"></div>
+            </div>
+
+            <!-- Chat panel: local mode only -->
+            <div class="panel" id="chat-panel" style="display:none;">
+                <div class="chat-header">
+                    <h2>Chat</h2>
+                    <button id="chat-clear-btn" class="chat-action-btn" title="Clear chat history">Clear</button>
+                </div>
+                <div id="chat-messages"></div>
+                <div id="chat-input-area">
+                    <textarea id="chat-input" placeholder="Ask about your route..." rows="2"></textarea>
+                    <button id="chat-send-btn">Send</button>
+                    <button id="chat-stop-btn" style="display:none;">Stop</button>
+                </div>
+            </div>
+
+            <div id="status-bar">
+                <span id="status-text">Ready</span>
+                <span id="brouter-status" class="status-dot red" title="BRouter not connected"></span>
+            </div>
+        </div>
+
+        <div id="map"></div>
+    </div>
+    <div id="elevation-timeline" style="display:none;">
+        <canvas id="elev-timeline-canvas"></canvas>
+        <div id="elev-timeline-overlay"></div>
+    </div>
+
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mapbox/togeojson@0.16.2/togeojson.js"></script>
+
+    <!-- Firebase SDKs (hosted mode only) — static script tags for guaranteed order -->
+    <script>
+        if (window.BIKEPLANNER_CONFIG.mode === 'hosted') {
+            // Firebase Hosting serves these from reserved /__/ URLs automatically.
+            var fbScripts = [
+                '/__/firebase/12.9.0/firebase-app-compat.js',
+                '/__/firebase/12.9.0/firebase-auth-compat.js',
+                '/__/firebase/12.9.0/firebase-firestore-compat.js',
+                '/__/firebase/init.js'
+            ];
+            fbScripts.forEach(function(src) {
+                document.write('<script src="' + src + '"><\/script>');
+            });
+        }
+    </script>
+    <script>
+        // Fallback injected at build time; /__/firebase/init.js takes precedence when available.
+        if (window.BIKEPLANNER_CONFIG.mode === 'hosted') {
+            window.firebaseConfig = window.firebaseConfig || __FIREBASE_CONFIG__;
+        }
+    </script>
+
+    <!-- App scripts: mode-dependent loading via document.write for guaranteed order -->
+    <script>
+        var mode = window.BIKEPLANNER_CONFIG.mode;
+        var prefix = mode === 'hosted' ? '/' : '/static/';
+
+        if (mode === 'hosted') {
+            // Hosted: firestore.js, auth.js, then app.js
+            document.write('<script src="/firestore.js"><\/script>');
+            document.write('<script src="/auth.js"><\/script>');
+        }
+
+        document.write('<script src="' + prefix + 'app.js"><\/script>');
+
+        if (mode === 'local') {
+            document.write('<script src="' + prefix + 'chat.js"><\/script>');
+        }
+    </script>
+</body>
+</html>
